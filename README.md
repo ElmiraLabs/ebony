@@ -32,21 +32,28 @@ Une commande crée un projet qui compile et démarre sous `owl serve`. Une autre
 
 ## Installation
 
-Prérequis : [OWL](https://github.com/followthewhiteowl/neowl) **1.9.0** (`owl` dans le PATH, la version prise en charge ; une autre version donne un avertissement de `ebony doctor`), Windows ou Linux. Installez Ebony **en une commande** (elle vérifie que `owl` est là, télécharge la dernière release, contrôle sa somme SHA-256 et installe ; elle n'installe pas OWL) :
+Prérequis : [OWL](https://github.com/followthewhiteowl/neowl) **1.9.0** dans le `PATH` (`owl --version`), sous Windows ou Linux. Une autre version donne un avertissement de `ebony doctor`. Pour l'instant, Ebony s'installe depuis ses sources.
 
 **Windows** (PowerShell) :
 
 ```powershell
-irm https://github.com/ElmiraLabs/ebony/releases/latest/download/install.ps1 | iex
+git clone https://github.com/ElmiraLabs/ebony C:\sources\ebony
+C:\sources\ebony\bin\ebony.cmd install
 ```
+
+Ouvrez ensuite un nouveau terminal et lancez `ebony doctor`.
 
 **Linux** :
 
 ```sh
-curl -fsSL https://github.com/ElmiraLabs/ebony/releases/latest/download/install.sh | sh
+git clone https://github.com/ElmiraLabs/ebony ~/ebony
+chmod +x ~/ebony/bin/ebony
+ln -s ~/ebony/bin/ebony ~/.local/bin/ebony
 ```
 
-Ouvrez ensuite un nouveau terminal et lancez `ebony doctor`. Autres voies (archive, clone) et détail de ce que fait l'installateur : le [guide d'installation](https://elmiralabs.github.io/ebony/guides/installation).
+Vérifiez que `~/.local/bin` est dans votre `PATH`, puis lancez `ebony doctor`.
+
+Le [guide d'installation](https://elmiralabs.github.io/ebony/guides/installation) détaille les deux voies. L'installation en une seule commande suivra la première release publiée.
 
 ## Démarrage rapide
 
@@ -68,7 +75,7 @@ Puis, dans un second terminal (le secret du jeton à la place de `eb_…`) :
 curl.exe -s -H "Authorization: Bearer eb_…" http://127.0.0.1:8080/api/produits       # []
 ```
 
-Sans jeton, la même requête répond **401**. Sous Linux : `cp` à la place de `Copy-Item` (la commande `ebony` est le lien posé par `install.sh`). Le [parcours détaillé](https://elmiralabs.github.io/ebony/guides/premiers-pas) explique chaque étape.
+Sans jeton, la même requête répond **401**. Sous Linux : `cp` à la place de `Copy-Item`. Le [parcours détaillé](https://elmiralabs.github.io/ebony/guides/premiers-pas) explique chaque étape.
 
 ## Documentation
 
