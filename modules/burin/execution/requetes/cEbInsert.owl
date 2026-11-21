@@ -1,0 +1,83 @@
+// Un INSERT en cours de construction : db.Insert(produits).Values(ligne).Returning(produits.Id).ToSQL(). Une ligne est un tableau associatif colonne -> valeur (pas besoin d'une entité : un seeder insère des lignes sans entité écrite à la main).
+// Values() peut être appelé plusieurs fois : chaque appel ajoute une ligne, et toutes les lignes écrivent les MÊMES colonnes (sinon 7002). Les colonnes écrites sont celles de la première ligne, dans l'ordre de la table.
+// Chaque valeur est vérifiée contre sa colonne dès Values() : une colonne inconnue (7001), une valeur du mauvais type ou Null pour une colonne qui refuse NULL (7002). Rien ne part à la base : ToSQL() rend le texte et les paramètres.
+// Une colonne NOT NULL omise n'est pas vue ici (Burin ne connaît pas encore les valeurs par défaut) : la base la refusera, avec son propre message.
+cEbInsert est une Classe
+PRIVÉ
+	oDialecte   est un iEbDialecteSql
+	oTable      est un cEbTable
+	tabLignes   est un tableau
+	tabColonnes est un tableau
+	tabRetour   est un tableau
+
+	PROCEDURE Constructeur(Dialecte est un iEbDialecteSql, TableCible est un cEbTable)
+		:oDialecte = Dialecte
+		:oTable = TableCible
+	FIN
+
+	// Ajoute une ligne : un tableau associatif colonne -> valeur. Lève (7001, 7002) pour une colonne inconnue, une valeur refusée ou une ligne qui n'écrit pas les mêmes colonnes que la première.
+	PROCEDURE PUBLIQUE Values(ligne est un tableau associatif) : cEbInsert
+		tabColonnesLigne est un tableau = EbColonnesDeLigne(:oTable, ligne, "Values")
+		SI :tabLignes..Occurrence = 0 ALORS
+			:tabColonnes = tabColonnesLigne
+		SINON
+			SI PAS EbMemesColonnes(:tabColonnes, tabColonnesLigne) ALORS
+				ExceptionDéclenche(7002, "Values() : la ligne " + (:tabLignes..Occurrence + 1) + " n'écrit pas les mêmes colonnes que la première (" + :oTable.Nom() + ") : toutes les lignes d'un INSERT écrivent les mêmes colonnes.")
+			FIN
+		FIN
+		tabCopie est un tableau associatif
+		POUR TOUT oCandidate DE tabColonnesLigne
+			oColonne est un cEbColonne = oCandidate
+			tabCopie[oColonne.Nom()] = EbValeurDeLigne(ligne, oColonne)
+		FIN
+		TableauAjoute(:tabLignes, tabCopie)
+		RENVOYER objet
+	FIN
+
+	// Demande que la base rende cette colonne pour chaque ligne écrite (RETURNING), sous l'alias « table__colonne » : la clé générée, par exemple. Lève (7001) pour une colonne d'une autre table.
+	PROCEDURE PUBLIQUE Returning(oColonne est un cEbColonne) : cEbInsert
+		EbVerifieColonneDeLaTable(:oTable, oColonne, "Returning")
+		TableauAjoute(:tabRetour, oColonne)
+		RENVOYER objet
+	FIN
+
+	// Le texte SQL et ses paramètres, sans aucune base. Lève (7006) si aucune ligne n'a été donnée.
+	PROCEDURE PUBLIQUE ToSQL() : cEbRequete
+		SI :tabLignes..Occurrence = 0 ALORS
+			ExceptionDéclenche(7006, "Requête incomplète : Insert(" + :oTable.Nom() + ") sans ligne, Values() n'a pas été appelé.")
+		FIN
+		oSql est un cEbSql
+		oSql.AjouteTexte("INSERT INTO ")
+		oSql.AjouteNomTable(:oTable.Nom())
+		oSql.AjouteTexte(" (")
+		nRang est un entier = 0
+		POUR TOUT oCandidate DE :tabColonnes
+			oColonne est un cEbColonne = oCandidate
+			nRang++
+			SI nRang > 1 ALORS
+				oSql.AjouteTexte(", ")
+			FIN
+			oSql.AjouteTable(oColonne.Nom())
+		FIN
+		oSql.AjouteTexte(") VALUES ")
+		POUR i = 1 À :tabLignes..Occurrence
+			SI i > 1 ALORS
+				oSql.AjouteTexte(", ")
+			FIN
+			oSql.AjouteTexte("(")
+			tabLigne est un tableau associatif = :tabLignes[i]
+			nRang = 0
+			POUR TOUT oCandidate DE :tabColonnes
+				oColonne est un cEbColonne = oCandidate
+				nRang++
+				SI nRang > 1 ALORS
+					oSql.AjouteTexte(", ")
+				FIN
+				oSql.AjouteValeur(tabLigne[oColonne.Nom()])
+			FIN
+			oSql.AjouteTexte(")")
+		FIN
+		oSql.AjouteTexte(EbFinRetour(:oDialecte, :tabRetour))
+		RENVOYER oSql.Construit(:oDialecte)
+	FIN
+FIN

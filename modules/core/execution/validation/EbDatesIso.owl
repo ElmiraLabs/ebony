@@ -1,0 +1,39 @@
+// Les formats ISO 8601 d'une date (AAAA-MM-JJ) et d'une date avec heure (AAAA-MM-JJTHH:MM:SS, « Z » facultatif) : le format ET l'existence au calendrier. Fonctions pures, sans disque.
+// Elles sont dans le cœur parce que deux modules s'en servent sans se connaître : le Poinçon (le contrôle d'un champ date) et les listes de Burin (le contrôle d'un filtre date).
+EbDatesIso est une CollectionDeProcédures
+
+	// Vrai si le texte est une date AAAA-MM-JJ qui existe au calendrier (les années bissextiles comprises).
+	PROCEDURE EbDateIsoValide(sTexte est une chaîne) : booléen
+		SI PAS RegexVérifie(sTexte, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$") ALORS
+			RENVOYER Faux
+		FIN
+		nAnnee est un entier = Val(Gauche(sTexte, 4))
+		nMois  est un entier = Val(Milieu(sTexte, 6, 2))
+		nJour  est un entier = Val(Milieu(sTexte, 9, 2))
+		SI nMois < 1 OU nMois > 12 OU nJour < 1 ALORS
+			RENVOYER Faux
+		FIN
+		nJoursDuMois est un entier = 31
+		SI nMois = 4 OU nMois = 6 OU nMois = 9 OU nMois = 11 ALORS
+			nJoursDuMois = 30
+		FIN
+		SI nMois = 2 ALORS
+			nJoursDuMois = 28
+			SI (nAnnee % 4 = 0 ET nAnnee % 100 <> 0) OU nAnnee % 400 = 0 ALORS
+				nJoursDuMois = 29
+			FIN
+		FIN
+		RENVOYER nJour <= nJoursDuMois
+	FIN
+
+	// Vrai si le texte est une date et heure AAAA-MM-JJTHH:MM:SS, avec un « Z » facultatif à la fin.
+	PROCEDURE EbDateHeureIsoValide(sTexte est une chaîne) : booléen
+		SI PAS RegexVérifie(sTexte, "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z?$") ALORS
+			RENVOYER Faux
+		FIN
+		SI PAS EbDateIsoValide(Gauche(sTexte, 10)) ALORS
+			RENVOYER Faux
+		FIN
+		RENVOYER Val(Milieu(sTexte, 12, 2)) < 24 ET Val(Milieu(sTexte, 15, 2)) < 60 ET Val(Milieu(sTexte, 18, 2)) < 60
+	FIN
+FIN

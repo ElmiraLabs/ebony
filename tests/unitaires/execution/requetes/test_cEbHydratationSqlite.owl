@@ -1,0 +1,143 @@
+// Tests de l'hydratation de Burin contre une VRAIE base SQLite en mémoire : une ligne écrite par Insert est relue par Select puis lue colonne par colonne (cEbLigne) avec le bon type OWL, NULL devient le défaut du type,
+// les deux colonnes « nom » d'une jointure se lisent séparément, et EbEnvoieRequete lève 500 quand la base refuse la requête.
+
+PROCEDURE EbTestConnexionHydratation() : cEbConnexionSqlReelle
+	cnx est une sqlConnexion
+	cnx..Provider = sqlSqlite
+	cnx..Source   = ":memory:"
+	oConnexion est un cEbConnexionSqlReelle(cnx, "SELECT 1")
+	oConnexion.Ouvre()
+	RENVOYER oConnexion
+FIN
+
+gConnexionHydratation est un cEbConnexionSqlReelle = EbTestConnexionHydratation()
+
+// La base : les tables produits, categories et articles, vides.
+PROCEDURE avantChaqueTest()
+	gConnexionHydratation = EbTestConnexionHydratation()
+	tabAucun est un tableau associatif
+	gConnexionHydratation.Envoie("CREATE TABLE produits (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, nom TEXT NOT NULL, prix REAL, actif INTEGER, cree_le TEXT)", tabAucun)
+	gConnexionHydratation.Envoie("CREATE TABLE categories (id INTEGER NOT NULL PRIMARY KEY, nom TEXT NOT NULL)", tabAucun)
+	gConnexionHydratation.Envoie("CREATE TABLE articles (id INTEGER NOT NULL PRIMARY KEY, nom TEXT NOT NULL, categorie_id INTEGER)", tabAucun)
+FIN
+
+PROCEDURE apresChaqueTest()
+	gConnexionHydratation.Ferme()
+FIN
+
+// Une ligne de la table produits : nom, prix, actif, date de création.
+PROCEDURE EbTestProduitHydrate(sNom est une chaîne, prix est un JSON, bActif est un booléen, creation est un JSON) : tableau associatif
+	tabLigne est un tableau associatif
+	tabLigne["nom"] = sNom
+	tabLigne["prix"] = prix
+	tabLigne["actif"] = bActif
+	tabLigne["cree_le"] = creation
+	RENVOYER tabLigne
+FIN
+
+// Ce qu'un Insert écrit, un Select le relit et cEbLigne le lit avec le bon type : entier, texte accentué, réel, booléen (relu 1 ou 0 par SQLite), date-heure en texte.
+PROCEDURE scenario_aller_retour_de_chaque_nature()
+	oBurin    est un cEbBurin = EbTestBurin()
+	oProduits est un cEbTable = EbTestProduits()
+	EbEnvoieRequete(gConnexionHydratation, oBurin.Insert(oProduits).Values(EbTestProduitHydrate("café", 12.5, Vrai, "2026-11-13 10:30:00")).Values(EbTestProduitHydrate("thé", 8, Faux, "2026-11-14")).ToSQL())
+	oId       est un cEbColonne     = oProduits.ColonneNommee("id")
+	oResultat est un cEbResultatSql = EbEnvoieRequete(gConnexionHydratation, oBurin.Select().From(oProduits).OrderBy(oId.Asc()).ToSQL())
+	tabLignes est un tableau        = EbLignesDe(oResultat)
+	dbgVérifieEgalité(tabLignes..Occurrence, 2, "deux lignes lues")
+	oCafe est un cEbLigne = tabLignes[1]
+	dbgVérifieEgalité(oCafe.LitEntier(oId), 1, "clé générée relue")
+	dbgVérifieEgalité(oCafe.LitTexte(oProduits.ColonneNommee("nom")), "café", "texte accentué")
+	dbgVérifieEgalité(oCafe.LitReel(oProduits.ColonneNommee("prix")), 12.5, "réel")
+	dbgVérifieVrai(oCafe.LitBooleen(oProduits.ColonneNommee("actif")), "booléen Vrai relu")
+	dbgVérifieEgalité(oCafe.LitDate(oProduits.ColonneNommee("cree_le")), "2026-11-13 10:30:00", "date-heure en texte")
+	oThe est un cEbLigne = tabLignes[2]
+	dbgVérifieEgalité(oThe.LitReel(oProduits.ColonneNommee("prix")), 8, "un entier écrit dans une colonne réelle")
+	dbgVérifieFaux(oThe.LitBooleen(oProduits.ColonneNommee("actif")), "booléen Faux relu")
+FIN
+
+// NULL en base : la lecture rend le défaut du type, EstNull le distingue ; un texte NULL est lu « ».
+PROCEDURE scenario_null_relu_comme_defaut()
+	oBurin      est un cEbBurin           = EbTestBurin()
+	oProduits   est un cEbTable           = EbTestProduits()
+	tabSansPrix est un tableau associatif
+	tabSansPrix["nom"] = "mystère"
+	EbEnvoieRequete(gConnexionHydratation, oBurin.Insert(oProduits).Values(tabSansPrix).ToSQL())
+	oResultat est un cEbResultatSql = EbEnvoieRequete(gConnexionHydratation, oBurin.Select().From(oProduits).ToSQL())
+	oLigne    est un cEbLigne       = EbLignesDe(oResultat)[1]
+	dbgVérifieVrai(oLigne.EstNull(oProduits.ColonneNommee("prix")), "prix NULL")
+	dbgVérifieEgalité(oLigne.LitReel(oProduits.ColonneNommee("prix")), 0, "prix NULL lu 0")
+	dbgVérifieFaux(oLigne.LitBooleen(oProduits.ColonneNommee("actif")), "actif NULL lu Faux")
+	sDate est une chaîne = oLigne.LitDate(oProduits.ColonneNommee("cree_le"))
+	dbgVérifieEgalité(sDate, "", "date NULL lue « »")
+	dbgVérifieFaux(oLigne.EstNull(oProduits.ColonneNommee("nom")), "le nom n'est pas NULL")
+FIN
+
+// Une jointure : les deux colonnes « nom » se lisent séparément, chacune avec sa table ; la colonne NULL d'une jointure gauche se lit comme le défaut de son type.
+PROCEDURE scenario_lecture_d_une_jointure()
+	oBurin       est un cEbBurin           = EbTestBurin()
+	oArticles    est un cEbTable           = EbTestArticles()
+	oCategories  est un cEbTable           = EbTestCategories()
+	tabCategorie est un tableau associatif
+	tabCategorie["id"] = 1
+	tabCategorie["nom"] = "livres"
+	EbEnvoieRequete(gConnexionHydratation, oBurin.Insert(oCategories).Values(tabCategorie).ToSQL())
+	tabAvec est un tableau associatif
+	tabAvec["id"] = 10
+	tabAvec["nom"] = "roman"
+	tabAvec["categorie_id"] = 1
+	tabSans est un tableau associatif
+	tabSans["id"] = 11
+	tabSans["nom"] = "orphelin"
+	EbEnvoieRequete(gConnexionHydratation, oBurin.Insert(oArticles).Values(tabAvec).ToSQL())
+	oSansCategorie est un cEbInsert = oBurin.Insert(oArticles)
+	EbEnvoieRequete(gConnexionHydratation, oSansCategorie.Values(tabSans).ToSQL())
+	oCle       est un cEbColonne     = oArticles.ColonneNommee("categorie_id")
+	oId        est un cEbColonne     = oCategories.ColonneNommee("id")
+	oIdArticle est un cEbColonne     = oArticles.ColonneNommee("id")
+	oResultat  est un cEbResultatSql = EbEnvoieRequete(gConnexionHydratation, oBurin.Select().From(oArticles).LeftJoin(oCategories, oCle.EqCol(oId)).OrderBy(oIdArticle.Asc()).ToSQL())
+	tabLignes  est un tableau        = EbLignesDe(oResultat)
+	oRoman     est un cEbLigne       = tabLignes[1]
+	dbgVérifieEgalité(oRoman.LitTexte(oArticles.ColonneNommee("nom")), "roman", "le nom de l'article")
+	dbgVérifieEgalité(oRoman.LitTexte(oCategories.ColonneNommee("nom")), "livres", "le nom de la catégorie, sans confusion")
+	oOrphelin est un cEbLigne = tabLignes[2]
+	dbgVérifieVrai(oOrphelin.EstNull(oCategories.ColonneNommee("nom")), "pas de catégorie : NULL")
+	dbgVérifieEgalité(oOrphelin.LitTexte(oCategories.ColonneNommee("nom")), "", "lu « »")
+	dbgVérifieEgalité(oOrphelin.LitEntier(oCle), 0, "clé étrangère NULL lue 0")
+FIN
+
+// Une colonne d'une table qui n'est pas dans la requête ne se lit pas : 7010 (la table categories n'a pas été jointe), au lieu d'un défaut silencieux.
+PROCEDURE scenario_colonne_d_une_table_non_jointe_refusee_a_la_lecture()
+	oBurin      est un cEbBurin = EbTestBurin()
+	oProduits   est un cEbTable = EbTestProduits()
+	oCategories est un cEbTable = EbTestCategories()
+	EbEnvoieRequete(gConnexionHydratation, oBurin.Insert(oProduits).Values(EbTestProduitHydrate("café", 12.5, Vrai, Null)).ToSQL())
+	oResultat est un cEbResultatSql = EbEnvoieRequete(gConnexionHydratation, oBurin.Select().From(oProduits).ToSQL())
+	oLigne    est un cEbLigne       = EbLignesDe(oResultat)[1]
+	sCode     est une chaîne        = ""
+	sVu       est une chaîne        = ""
+	QUAND EXCEPTION DANS
+		sVu = oLigne.LitTexte(oCategories.ColonneNommee("nom"))
+	FAIRE
+		sCode = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sCode, "7010", "colonne d'une table non jointe")
+FIN
+
+// Une requête refusée par la VRAIE base lève 500 avec le message de la base, au lieu de rendre un résultat en échec.
+PROCEDURE scenario_requete_refusee_par_la_base_leve_500()
+	oBurin    est un cEbBurin           = EbTestBurin()
+	oProduits est un cEbTable           = EbTestProduits()
+	oPrix     est un cEbColonne         = oProduits.ColonneNommee("prix")
+	tabAucun  est un tableau associatif
+	oRequete  est un cEbRequete         = oBurin.Select().From(oProduits).Where(oBurin.Raw("colonne_inexistante > 1", tabAucun)).ToSQL()
+	nCode     est un entier             = 0
+	sMessage  est une chaîne            = ""
+	QUAND EXCEPTION DANS
+		oEssai est un cEbResultatSql = EbEnvoieRequete(gConnexionHydratation, oRequete)
+	FAIRE
+		nCode    = ExceptionInfo(errCode)
+		sMessage = ExceptionInfo(errMessage)
+	FIN
+	dbgVérifieEgalité(nCode, 500, "500")
+	dbgVérifieVrai(Taille(sMessage) > 0, "le message de la base est donné")
+FIN

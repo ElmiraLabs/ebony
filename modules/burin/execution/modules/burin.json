@@ -1,0 +1,93 @@
+{
+	"nom": "burin",
+	"composant": {
+		"fabrique": "cEbServiceBase",
+		"arguments": ["base.fournisseur"]
+	},
+	"fournisseurs": {
+		"valeurs": ["sqlite", "postgresql", "hfsql"],
+		"defaut": "sqlite",
+		"capacites": [
+			{ "nom": "migrations", "fournisseurs": ["sqlite", "postgresql"] }
+		]
+	},
+	"environnement": [
+		{
+			"cle": "DB_FICHIER",
+			"type": "chemin",
+			"defaut": "storage/app.db",
+			"description": "Fichier de la base SQLite.",
+			"fournisseur": ["sqlite"]
+		},
+		{
+			"cle": "DB_HOTE",
+			"type": "texte",
+			"defaut": "localhost",
+			"description": "Hôte du serveur de base de données.",
+			"fournisseur": ["postgresql", "hfsql"]
+		},
+		{
+			"cle": "DB_PORT",
+			"type": "port",
+			"defaut": "5432",
+			"description": "Port du serveur de base de données.",
+			"fournisseur": ["postgresql"]
+		},
+		{
+			"cle": "DB_PORT",
+			"type": "port",
+			"defaut": "4900",
+			"description": "Port du serveur de base de données.",
+			"fournisseur": ["hfsql"]
+		},
+		{
+			"cle": "DB_NOM",
+			"type": "texte",
+			"defaut": "{dossier}",
+			"description": "Nom de la base.",
+			"fournisseur": ["postgresql", "hfsql"]
+		},
+		{
+			"cle": "DB_UTILISATEUR",
+			"type": "texte",
+			"defaut": "postgres",
+			"description": "Utilisateur de la base.",
+			"fournisseur": ["postgresql"]
+		},
+		{
+			"cle": "DB_UTILISATEUR",
+			"type": "texte",
+			"defaut": "admin",
+			"description": "Utilisateur de la base.",
+			"fournisseur": ["hfsql"]
+		},
+		{
+			"cle": "DB_MOT_DE_PASSE",
+			"type": "texte",
+			"secret": true,
+			"description": "Mot de passe de la base.",
+			"fournisseur": ["postgresql", "hfsql"]
+		},
+		{
+			"cle": "DB_TLS",
+			"type": "liste",
+			"valeurs": ["verifie", "ca", "accepte", "desactive"],
+			"defaut": "verifie",
+			"description": "Chiffrement TLS vers la base : verifie (certificat et nom du serveur vérifiés, défaut), ca (chaîne de certificats vérifiée, pas le nom), accepte (chiffré, certificat non vérifié), desactive (aucun TLS : serveur local de développement seulement).",
+			"fournisseur": ["postgresql"]
+		},
+		{
+			"cle": "DB_CERTIFICAT_CA",
+			"type": "chemin",
+			"description": "Fichier PEM de l'autorité de certification du serveur (CA interne, certificat auto-signé) ; facultatif, sans lui la liste de confiance d'OWL s'applique.",
+			"fournisseur": ["postgresql"]
+		},
+		{
+			"cle": "APP_ENV",
+			"type": "liste",
+			"valeurs": ["developpement", "test", "production"],
+			"defaut": "developpement",
+			"description": "Environnement d'exécution : developpement (défaut), test ou production. La commande de remplissage de la base (seed) refuse tout autre environnement que developpement et test."
+		}
+	]
+}

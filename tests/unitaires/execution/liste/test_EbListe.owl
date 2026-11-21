@@ -1,0 +1,237 @@
+// Tests de la liste d'une ressource : cEbCriteresListe (lecture, décodage et contrôle des paramètres de l'adresse) et EbListe (la requête Burin d'une page et du total). Aucune base : le SQL se lit par Texte() et Parametres().
+
+// Rend « code|message » si la vérification lève, ou « » si elle réussit.
+PROCEDURE EbTestRefusCriteres(oCriteres est un cEbCriteresListe) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oCriteres.Verifie()
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Des critères sur les colonnes de la table de test « produits » : nom (texte), prix (réel), actif (booléen), cree_le (dateheure) et id (entier, la clé), avec les filtres reçus.
+PROCEDURE EbTestCriteresProduits(sPage est une chaîne, sLimite est une chaîne, sTri est une chaîne, sOrdre est une chaîne, sNom est une chaîne, sPrix est une chaîne, sActif est une chaîne, sId est une chaîne) : cEbCriteresListe
+	oCriteres est un cEbCriteresListe(sPage, sLimite, sTri, sOrdre)
+	oCriteres.AjouteChamp("id", "id", "entier", sId)
+	oCriteres.AjouteChamp("nom", "nom", "texte", sNom)
+	oCriteres.AjouteChamp("prix", "prix", "reel", sPrix)
+	oCriteres.AjouteChamp("actif", "actif", "booleen", sActif)
+	oCriteres.AjouteChamp("cree_le", "cree_le", "dateheure", "")
+	RENVOYER oCriteres
+FIN
+
+// Aucun paramètre : page 1, vingt lignes, tri par la clé, aucun filtre ; vide et Null sont la même chose (OWL rend Null un paramètre absent quand un suivant est présent).
+PROCEDURE scenario_defauts()
+	oCriteres est un cEbCriteresListe = EbTestCriteresProduits("", "", "", "", "", "", "", "")
+	dbgVérifieEgalité(oCriteres.Page(), 1, "page 1")
+	dbgVérifieEgalité(oCriteres.Limite(), 20, "vingt lignes")
+	dbgVérifieEgalité(oCriteres.Decalage(), 0, "aucun décalage")
+	dbgVérifieEgalité(oCriteres.Tri(), "", "tri par la clé")
+	dbgVérifieFaux(oCriteres.Descendant(), "croissant")
+	dbgVérifieEgalité(EbTestRefusCriteres(oCriteres), "", "rien à refuser")
+	oNull est un cEbCriteresListe = EbTestCriteresProduits(Null, Null, Null, Null, Null, Null, Null, Null)
+	dbgVérifieEgalité(oNull.Page(), 1, "Null : page 1")
+	dbgVérifieEgalité(oNull.Limite(), 20, "Null : vingt lignes")
+	dbgVérifieEgalité(EbTestRefusCriteres(oNull), "", "Null : rien à refuser")
+FIN
+
+// Une page, une limite, un tri et un ordre valides : le décalage est (page - 1) × limite, le tri est la COLONNE de la clé JSON demandée.
+PROCEDURE scenario_page_limite_tri()
+	oCriteres est un cEbCriteresListe = EbTestCriteresProduits("3", "10", "prix", "desc", "", "", "", "")
+	dbgVérifieEgalité(oCriteres.Page(), 3, "page")
+	dbgVérifieEgalité(oCriteres.Limite(), 10, "limite")
+	dbgVérifieEgalité(oCriteres.Decalage(), 20, "décalage")
+	dbgVérifieEgalité(oCriteres.Tri(), "prix", "colonne triée")
+	dbgVérifieVrai(oCriteres.Descendant(), "décroissant")
+	dbgVérifieEgalité(EbTestRefusCriteres(oCriteres), "", "valide")
+	oMaj est un cEbCriteresListe = EbTestCriteresProduits("", "100", "", "DESC", "", "", "", "")
+	dbgVérifieVrai(oMaj.Descendant(), "DESC en capitales : accepté")
+	dbgVérifieEgalité(oMaj.Limite(), 100, "100 est la limite permise")
+FIN
+
+// Chaque paramètre mal formé est une erreur de 400 ; UNE réponse les nomme tous ; rien n'est avalé (un « abc » ne devient pas 0, un « 2.7 » n'est pas tronqué).
+PROCEDURE scenario_parametres_refuses()
+	sRefus est une chaîne = EbTestRefusCriteres(EbTestCriteresProduits("abc", "2.7", "inconnu", "haut", "", "", "", ""))
+	dbgVérifieEgalité(Gauche(sRefus, 4), "400|", "code 400")
+	dbgVérifieVrai(Position(sRefus, "« page »") > 0, "page nommée")
+	dbgVérifieVrai(Position(sRefus, "« limite »") > 0, "limite nommée")
+	dbgVérifieVrai(Position(sRefus, "« tri » doit être l'un de : id, nom, prix, actif, cree_le") > 0, "tri : les valeurs permises")
+	dbgVérifieVrai(Position(sRefus, "« ordre » doit valoir asc ou desc") > 0, "ordre nommé")
+	dbgVérifieVrai(Position(EbTestRefusCriteres(EbTestCriteresProduits("0", "", "", "", "", "", "", "")), "« page »") > 0, "page 0 refusée")
+	dbgVérifieVrai(Position(EbTestRefusCriteres(EbTestCriteresProduits("-3", "", "", "", "", "", "", "")), "« page »") > 0, "page négative refusée")
+	dbgVérifieVrai(Position(EbTestRefusCriteres(EbTestCriteresProduits("", "0", "", "", "", "", "", "")), "« limite »") > 0, "limite 0 refusée")
+	dbgVérifieVrai(Position(EbTestRefusCriteres(EbTestCriteresProduits("", "101", "", "", "", "", "", "")), "de 1 à 100") > 0, "limite 101 refusée, le message dit la borne")
+	dbgVérifieVrai(Position(EbTestRefusCriteres(EbTestCriteresProduits("99999999999999999999", "", "", "", "", "", "", "")), "« page »") > 0, "page trop grande refusée (pas de dépassement)")
+FIN
+
+// Les valeurs sont décodées : « %C3%A9 » est « é », « + » une espace, « %26 » un « & ».
+PROCEDURE scenario_valeurs_decodees()
+	oCriteres est un cEbCriteresListe   = EbTestCriteresProduits("", "", "", "", "Ada+L%C3%A9a%26x", "", "", "")
+	tabF      est un tableau associatif = oCriteres.Filtres()
+	dbgVérifieEgalité(tabF["nom"], "Ada Léa&x", "décodé")
+	oTri est un cEbCriteresListe = EbTestCriteresProduits("", "", "cree%5Fle", "", "", "", "", "")
+	dbgVérifieEgalité(oTri.Tri(), "cree_le", "le tri est décodé aussi")
+FIN
+
+// Un filtre prend le type de sa colonne : entier, réel, booléen (true, false, 1, 0), texte ; vide : pas de filtre.
+PROCEDURE scenario_filtres_types()
+	oCriteres est un cEbCriteresListe   = EbTestCriteresProduits("", "", "", "", "Stylo", "12.5", "true", "7")
+	tabF      est un tableau associatif = oCriteres.Filtres()
+	dbgVérifieEgalité(tabF["nom"], "Stylo", "texte")
+	dbgVérifieEgalité(tabF["prix"], 12.5, "réel")
+	dbgVérifieEgalité(tabF["id"], 7, "entier")
+	dbgVérifieEgalité(tabF["actif"], Vrai, "booléen vrai")
+	dbgVérifieEgalité(EbTestRefusCriteres(oCriteres), "", "valide")
+	oFaux   est un cEbCriteresListe   = EbTestCriteresProduits("", "", "", "", "", "", "0", "")
+	tabFaux est un tableau associatif = oFaux.Filtres()
+	dbgVérifieEgalité(tabFaux["actif"], Faux, "0 est faux")
+	oVide   est un cEbCriteresListe   = EbTestCriteresProduits("", "", "", "", "", "", "", "")
+	tabVide est un tableau associatif = oVide.Filtres()
+	dbgVérifieEgalité(tabVide..Occurrence, 0, "aucun filtre")
+FIN
+
+// Un filtre qui n'est pas du type de sa colonne est refusé, avec le nom du paramètre et ce qui est attendu ; toutes les erreurs ensemble.
+PROCEDURE scenario_filtres_refuses()
+	sRefus est une chaîne = EbTestRefusCriteres(EbTestCriteresProduits("", "", "", "", "", "abc", "peut-etre", "1.5"))
+	dbgVérifieEgalité(Gauche(sRefus, 4), "400|", "code 400")
+	dbgVérifieVrai(Position(sRefus, "« filtre_prix » doit être un nombre") > 0, "réel refusé")
+	dbgVérifieVrai(Position(sRefus, "« filtre_actif » doit être true, false, 1 ou 0") > 0, "booléen refusé")
+	dbgVérifieVrai(Position(sRefus, "« filtre_id » doit être un entier") > 0, "entier refusé : 1.5 n'est pas tronqué")
+	dbgVérifieEgalité(Position(sRefus, "filtre_nom"), 0, "un texte est toujours valide")
+FIN
+
+// Les dates : le filtre d'une colonne date ou dateheure doit être au format ISO 8601.
+PROCEDURE scenario_filtre_de_date()
+	oCriteres est un cEbCriteresListe("", "", "", "")
+	oCriteres.AjouteChamp("naissance", "naissance", "date", "1990-01-02")
+	oCriteres.AjouteChamp("vu", "vu", "dateheure", "2026-11-16T10:30:00")
+	tabF est un tableau associatif = oCriteres.Filtres()
+	dbgVérifieEgalité(tabF["naissance"], "1990-01-02", "date")
+	dbgVérifieEgalité(tabF["vu"], "2026-11-16T10:30:00", "dateheure")
+	oMauvais est un cEbCriteresListe("", "", "", "")
+	oMauvais.AjouteChamp("naissance", "naissance", "date", "02/01/1990")
+	dbgVérifieVrai(Position(EbTestRefusCriteres(oMauvais), "« filtre_naissance » doit être une date au format AAAA-MM-JJ") > 0, "date refusée")
+FIN
+
+// La requête d'une page : filtres exigés ensemble, tri demandé puis clé croissante, limite et décalage ; aucune valeur dans le texte.
+PROCEDURE scenario_requete_d_une_page()
+	oBurin    est un cEbBurin           = EbTestBurin()
+	oProduits est un cEbTable           = EbTestProduits()
+	oCriteres est un cEbCriteresListe   = EbTestCriteresProduits("3", "10", "prix", "desc", "Stylo", "", "true", "")
+	oRequete  est un cEbRequete         = EbListeRequete(oBurin, oProduits, oCriteres)
+	tabP      est un tableau associatif = oRequete.Parametres()
+	dbgVérifieVrai(Position(oRequete.Texte(), `WHERE`) > 0, "il y a des conditions")
+	dbgVérifieVrai(Position(oRequete.Texte(), `"produits"."nom" = {p`) > 0, "filtre sur le nom, en paramètre")
+	dbgVérifieVrai(Position(oRequete.Texte(), `"produits"."actif" = {p`) > 0, "filtre sur actif, en paramètre")
+	dbgVérifieVrai(Position(oRequete.Texte(), ` AND `) > 0, "les filtres sont tous exigés")
+	dbgVérifieVrai(Position(oRequete.Texte(), `ORDER BY "produits"."prix" DESC, "produits"."id" ASC`) > 0, "tri demandé, puis la clé")
+	dbgVérifieVrai(Position(oRequete.Texte(), `LIMIT 10 OFFSET 20`) > 0, "page 3 de 10 : saute 20")
+	dbgVérifieEgalité(Position(oRequete.Texte(), "Stylo"), 0, "aucune valeur dans le texte")
+	dbgVérifieEgalité(oRequete.NbParametres(), 2, "deux paramètres")
+FIN
+
+// Sans tri ni filtre : toute la table par la clé croissante, une page de vingt lignes ; trier sur la clé n'écrit pas la clé deux fois.
+PROCEDURE scenario_requete_sans_filtre()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oSimple   est un cEbRequete = EbListeRequete(oBurin, oProduits, EbTestCriteresProduits("", "", "", "", "", "", "", ""))
+	dbgVérifieEgalité(Position(oSimple.Texte(), "WHERE"), 0, "aucune condition")
+	dbgVérifieVrai(Position(oSimple.Texte(), `ORDER BY "produits"."id" ASC LIMIT 20`) > 0, "clé croissante, vingt lignes")
+	dbgVérifieEgalité(Position(oSimple.Texte(), "OFFSET"), 0, "page 1 : pas de décalage écrit")
+	oCle est un cEbRequete = EbListeRequete(oBurin, oProduits, EbTestCriteresProduits("", "", "id", "desc", "", "", "", ""))
+	dbgVérifieVrai(Position(oCle.Texte(), `ORDER BY "produits"."id" DESC LIMIT`) > 0, "tri sur la clé : une seule fois")
+FIN
+
+// Le total : les MÊMES filtres, sans ordre ni limite ; une page vide au-delà de la fin n'est pas une erreur.
+PROCEDURE scenario_requete_du_total()
+	oBurin    est un cEbBurin         = EbTestBurin()
+	oProduits est un cEbTable         = EbTestProduits()
+	oCriteres est un cEbCriteresListe = EbTestCriteresProduits("5", "10", "prix", "desc", "Stylo", "", "", "")
+	oCompte   est un cEbRequete       = EbListeRequeteCompte(oBurin, oProduits, oCriteres)
+	dbgVérifieVrai(Position(oCompte.Texte(), `SELECT COUNT(*) AS "total" FROM "produits" WHERE "produits"."nom" = {p1}`) > 0, "COUNT sous le même filtre")
+	dbgVérifieEgalité(Position(oCompte.Texte(), "ORDER BY"), 0, "sans ordre")
+	dbgVérifieEgalité(Position(oCompte.Texte(), "LIMIT"), 0, "sans limite")
+FIN
+
+// Des lignes de test en mémoire : un tableau (une ligne = un tableau associatif colonne vers valeur), comme le repository en mémoire généré les fabrique.
+PROCEDURE EbTestLignesListe() : tableau
+	tabLignes est un tableau
+	tabUn     est un tableau associatif
+	tabUn["id"] = 1
+	tabUn["nom"] = "Stylo"
+	tabUn["prix"] = 2.5
+	tabUn["actif"] = Vrai
+	TableauAjoute(tabLignes, tabUn)
+	tabDeux est un tableau associatif
+	tabDeux["id"] = 2
+	tabDeux["nom"] = "Cahier"
+	tabDeux["prix"] = 4
+	tabDeux["actif"] = Faux
+	TableauAjoute(tabLignes, tabDeux)
+	tabTrois est un tableau associatif
+	tabTrois["id"] = 3
+	tabTrois["nom"] = "Stylo"
+	tabTrois["prix"] = 1
+	tabTrois["actif"] = Vrai
+	TableauAjoute(tabLignes, tabTrois)
+	tabQuatre est un tableau associatif
+	tabQuatre["id"] = 4
+	tabQuatre["nom"] = "Gomme"
+	tabQuatre["prix"] = 4
+	tabQuatre["actif"] = Faux
+	TableauAjoute(tabLignes, tabQuatre)
+	RENVOYER tabLignes
+FIN
+
+// Les rangs rendus sous une chaîne « 1,3 » pour comparer simplement.
+PROCEDURE EbTestRangsListe(tabRangs est un tableau) : chaîne
+	sRes est une chaîne = ""
+	POUR TOUT nRang DE tabRangs
+		SI sRes <> "" ALORS
+			sRes += ","
+		FIN
+		sRes += nRang
+	FIN
+	RENVOYER sRes
+FIN
+
+// En mémoire : sans critère, les lignes dans l'ordre de la clé ; un filtre d'égalité garde les lignes qui correspondent ; plusieurs filtres sont tous exigés (booléens compris).
+PROCEDURE scenario_memoire_filtre()
+	tabLignes est un tableau = EbTestLignesListe()
+	dbgVérifieEgalité(EbTestRangsListe(EbListeRetenus(tabLignes, EbTestCriteresProduits("", "", "", "", "", "", "", ""), "id")), "1,2,3,4", "sans critère : la clé croissante")
+	dbgVérifieEgalité(EbTestRangsListe(EbListeRetenus(tabLignes, EbTestCriteresProduits("", "", "", "", "Stylo", "", "", ""), "id")), "1,3", "filtre sur le nom")
+	dbgVérifieEgalité(EbTestRangsListe(EbListeRetenus(tabLignes, EbTestCriteresProduits("", "", "", "", "Stylo", "2.5", "", ""), "id")), "1", "deux filtres : le nom et le prix")
+	dbgVérifieEgalité(EbTestRangsListe(EbListeRetenus(tabLignes, EbTestCriteresProduits("", "", "", "", "", "", "false", ""), "id")), "2,4", "filtre booléen")
+	dbgVérifieEgalité(EbTestRangsListe(EbListeRetenus(tabLignes, EbTestCriteresProduits("", "", "", "", "Gomme", "", "true", ""), "id")), "", "aucune ligne ne correspond")
+FIN
+
+// En mémoire : le tri demandé, croissant ou décroissant, la clé croissante départageant les égalités (comme le SQL).
+PROCEDURE scenario_memoire_tri()
+	tabLignes est un tableau = EbTestLignesListe()
+	dbgVérifieEgalité(EbTestRangsListe(EbListeRetenus(tabLignes, EbTestCriteresProduits("", "", "prix", "", "", "", "", ""), "id")), "3,1,2,4", "prix croissant, la clé départage 2 et 4")
+	dbgVérifieEgalité(EbTestRangsListe(EbListeRetenus(tabLignes, EbTestCriteresProduits("", "", "prix", "desc", "", "", "", ""), "id")), "2,4,1,3", "prix décroissant, la clé croissante départage 2 et 4")
+	dbgVérifieEgalité(EbTestRangsListe(EbListeRetenus(tabLignes, EbTestCriteresProduits("", "", "nom", "", "", "", "", ""), "id")), "2,4,1,3", "nom croissant")
+	dbgVérifieEgalité(EbTestRangsListe(EbListeRetenus(tabLignes, EbTestCriteresProduits("", "", "id", "desc", "", "", "", ""), "id")), "4,3,2,1", "la clé décroissante")
+FIN
+
+// En mémoire : la page est la fenêtre de limite lignes après le décalage ; au-delà de la fin : vide, sans erreur.
+PROCEDURE scenario_memoire_fenetre()
+	tabLignes est un tableau          = EbTestLignesListe()
+	oPremiere est un cEbCriteresListe = EbTestCriteresProduits("1", "3", "", "", "", "", "", "")
+	oSeconde  est un cEbCriteresListe = EbTestCriteresProduits("2", "3", "", "", "", "", "", "")
+	oHors     est un cEbCriteresListe = EbTestCriteresProduits("3", "3", "", "", "", "", "", "")
+	dbgVérifieEgalité(EbTestRangsListe(EbListeFenetre(EbListeRetenus(tabLignes, oPremiere, "id"), oPremiere)), "1,2,3", "page 1")
+	dbgVérifieEgalité(EbTestRangsListe(EbListeFenetre(EbListeRetenus(tabLignes, oSeconde, "id"), oSeconde)), "4", "page 2 : la dernière ligne")
+	dbgVérifieEgalité(EbTestRangsListe(EbListeFenetre(EbListeRetenus(tabLignes, oHors, "id"), oHors)), "", "au-delà de la fin : vide")
+FIN
+
+// Le corps de la réponse : les lignes dans « donnees », et « meta » avec le total, la page, la limite et le nombre de pages (arrondi vers le haut) ; une liste vide a 0 page.
+PROCEDURE scenario_reponse_de_la_liste()
+	oCriteres est un cEbCriteresListe = EbTestCriteresProduits("2", "10", "", "", "", "", "", "")
+	dbgVérifieEgalité(EbListeReponse(`{"id":1},{"id":2}`, 21, oCriteres), `{"donnees":[{"id":1},{"id":2}],"meta":{"total":21,"page":2,"limite":10,"pages":3}}`, "21 lignes de 10 : trois pages")
+	dbgVérifieEgalité(EbListeReponse("", 20, oCriteres), `{"donnees":[],"meta":{"total":20,"page":2,"limite":10,"pages":2}}`, "20 lignes de 10 : deux pages exactement")
+	dbgVérifieEgalité(EbListeReponse("", 0, oCriteres), `{"donnees":[],"meta":{"total":0,"page":2,"limite":10,"pages":0}}`, "liste vide : zéro page")
+	dbgVérifieVrai(JSONValide(EbListeReponse(`{"id":1}`, 1, oCriteres)), "JSON valide")
+FIN

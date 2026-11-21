@@ -1,0 +1,160 @@
+// Tests des écritures de Burin (INSERT, UPDATE, DELETE) contre une VRAIE base SQLite en mémoire : le texte et les paramètres que ToSQL() rend sont acceptés par iEbConnexionSql.Envoie, RETURNING rend la clé générée
+// sous son alias, les lignes affectées sont comptées, NULL, booléens et accents passent, une injection reste une valeur, et le garde-fou empêche d'effacer ou de réécrire toute la table par oubli.
+
+PROCEDURE EbTestConnexionEcritures() : cEbConnexionSqlReelle
+	cnx est une sqlConnexion
+	cnx..Provider = sqlSqlite
+	cnx..Source   = ":memory:"
+	oConnexion est un cEbConnexionSqlReelle(cnx, "SELECT 1")
+	oConnexion.Ouvre()
+	RENVOYER oConnexion
+FIN
+
+gConnexionEcritures est un cEbConnexionSqlReelle = EbTestConnexionEcritures()
+
+// La base : la table produits (id généré par la base), vide, prête pour chaque scénario.
+PROCEDURE avantChaqueTest()
+	gConnexionEcritures = EbTestConnexionEcritures()
+	tabAucun est un tableau associatif
+	gConnexionEcritures.Envoie("CREATE TABLE produits (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, nom TEXT NOT NULL, prix REAL, actif INTEGER, cree_le TEXT)", tabAucun)
+FIN
+
+PROCEDURE apresChaqueTest()
+	gConnexionEcritures.Ferme()
+FIN
+
+// Envoie la requête construite et rend le résultat : texte et paramètres, tels que ToSQL() les donne.
+PROCEDURE EbTestEnvoieEcriture(oRequete est un cEbRequete) : cEbResultatSql
+	oResultat est un cEbResultatSql = gConnexionEcritures.Envoie(oRequete.Texte(), oRequete.Parametres())
+	dbgVérifieVrai(oResultat.Succes(), "la base accepte la requête : " + oResultat.Message() + " (" + oRequete.Texte() + ")")
+	RENVOYER oResultat
+FIN
+
+// Les noms des produits de la table, triés par id, séparés par « , ».
+PROCEDURE EbTestNomsEcritures() : chaîne
+	oBurin    est un cEbBurin       = EbTestBurin()
+	oProduits est un cEbTable       = EbTestProduits()
+	oId       est un cEbColonne     = oProduits.ColonneNommee("id")
+	oResultat est un cEbResultatSql = EbTestEnvoieEcriture(oBurin.Select().From(oProduits).OrderBy(oId.Asc()).ToSQL())
+	sNoms     est une chaîne        = ""
+	POUR TOUT ligne DE oResultat.Lignes()
+		sNoms += EbSeparateur(sNoms) + ligne["produits__nom"]
+	FIN
+	RENVOYER sNoms
+FIN
+
+// Une ligne de la table produits : nom, prix, actif.
+PROCEDURE EbTestLigneEcriture(sNom est une chaîne, rPrix est un JSON, bActif est un booléen) : tableau associatif
+	tabLigne est un tableau associatif
+	tabLigne["nom"] = sNom
+	tabLigne["prix"] = rPrix
+	tabLigne["actif"] = bActif
+	RENVOYER tabLigne
+FIN
+
+// Insère une ligne et la clé que la base a générée revient par RETURNING, sous l'alias « produits__id » ; accents, NULL et booléen passent.
+PROCEDURE scenario_insert_et_returning_sur_sqlite()
+	oBurin      est un cEbBurin           = EbTestBurin()
+	oProduits   est un cEbTable           = EbTestProduits()
+	oId         est un cEbColonne         = oProduits.ColonneNommee("id")
+	oPremier    est un cEbResultatSql     = EbTestEnvoieEcriture(oBurin.Insert(oProduits).Values(EbTestLigneEcriture("café", 12.5, Vrai)).Returning(oId).ToSQL())
+	tabPremiere est un tableau associatif = oPremier.Lignes()[1]
+	dbgVérifieEgalité(tabPremiere["produits__id"], 1, "la première clé générée")
+	oSecond    est un cEbResultatSql     = EbTestEnvoieEcriture(oBurin.Insert(oProduits).Values(EbTestLigneEcriture("thé", Null, Faux)).Returning(oId).ToSQL())
+	tabSeconde est un tableau associatif = oSecond.Lignes()[1]
+	dbgVérifieEgalité(tabSeconde["produits__id"], 2, "la seconde")
+	dbgVérifieEgalité(EbTestNomsEcritures(), "café, thé", "les deux lignes, le nom accentué intact")
+	oLues  est un cEbResultatSql     = EbTestEnvoieEcriture(oBurin.Select().From(oProduits).OrderBy(oId.Asc()).ToSQL())
+	tabThe est un tableau associatif = oLues.Lignes()[2]
+	dbgVérifieEgalité(TypeVar(tabThe["produits__prix"]), 0, "NULL écrit, NULL relu")
+	dbgVérifieEgalité(tabThe["produits__actif"], 0, "Faux écrit, 0 relu")
+FIN
+
+// Plusieurs lignes en un seul INSERT : toutes sont écrites, RETURNING rend une ligne par ligne écrite.
+PROCEDURE scenario_insert_plusieurs_lignes_sur_sqlite()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oId       est un cEbColonne = oProduits.ColonneNommee("id")
+	oInsert   est un cEbInsert  = oBurin.Insert(oProduits)
+	oInsert.Values(EbTestLigneEcriture("café", 12.5, Vrai)).Values(EbTestLigneEcriture("thé", 8, Vrai)).Values(EbTestLigneEcriture("chocolat", 4, Faux)).Returning(oId)
+	oResultat est un cEbResultatSql = EbTestEnvoieEcriture(oInsert.ToSQL())
+	dbgVérifieEgalité(oResultat.NbLignes(), 3, "trois clés rendues")
+	dbgVérifieEgalité(EbTestNomsEcritures(), "café, thé, chocolat", "trois lignes écrites, dans l'ordre")
+FIN
+
+// Une tentative d'injection dans une valeur est écrite telle quelle : la table existe toujours, le texte est relu à l'identique.
+PROCEDURE scenario_injection_sans_effet_a_l_ecriture()
+	oBurin    est un cEbBurin = EbTestBurin()
+	oProduits est un cEbTable = EbTestProduits()
+	sPiege    est une chaîne  = `x'); DROP TABLE produits; --`
+	EbTestEnvoieEcriture(oBurin.Insert(oProduits).Values(EbTestLigneEcriture(sPiege, 1, Vrai)).ToSQL())
+	dbgVérifieEgalité(EbTestNomsEcritures(), sPiege, "la table existe toujours, la valeur est intacte")
+FIN
+
+// Update avec condition : une seule ligne change, la base compte une ligne affectée ; NULL s'écrit ; RETURNING rend la ligne modifiée.
+PROCEDURE scenario_update_sur_sqlite()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oId       est un cEbColonne = oProduits.ColonneNommee("id")
+	oNom      est un cEbColonne = oProduits.ColonneNommee("nom")
+	oPrix     est un cEbColonne = oProduits.ColonneNommee("prix")
+	EbTestEnvoieEcriture(oBurin.Insert(oProduits).Values(EbTestLigneEcriture("café", 12.5, Vrai)).Values(EbTestLigneEcriture("thé", 8, Vrai)).ToSQL())
+	tabNouveau est un tableau associatif
+	tabNouveau["nom"] = "café noir"
+	tabNouveau["prix"] = Null
+	oResultat est un cEbResultatSql = EbTestEnvoieEcriture(oBurin.Update(oProduits).Set(tabNouveau).Where(oNom.Eq("café")).Returning(oId).ToSQL())
+	dbgVérifieEgalité(oResultat.NbLignes(), 1, "une ligne modifiée, rendue par RETURNING")
+	dbgVérifieEgalité(EbTestNomsEcritures(), "café noir, thé", "seule la ligne visée a changé")
+	oPrixNul est un cEbResultatSql = EbTestEnvoieEcriture(oBurin.Select().From(oProduits).Where(oPrix.IsNull()).ToSQL())
+	dbgVérifieEgalité(oPrixNul.NbLignes(), 1, "le prix est NULL pour la ligne modifiée")
+FIN
+
+// Del avec condition : seule la ligne visée disparaît ; Returning rend ce qui a été effacé.
+PROCEDURE scenario_del_sur_sqlite()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oId       est un cEbColonne = oProduits.ColonneNommee("id")
+	oNom      est un cEbColonne = oProduits.ColonneNommee("nom")
+	EbTestEnvoieEcriture(oBurin.Insert(oProduits).Values(EbTestLigneEcriture("café", 12.5, Vrai)).Values(EbTestLigneEcriture("thé", 8, Vrai)).ToSQL())
+	oResultat est un cEbResultatSql     = EbTestEnvoieEcriture(oBurin.Del(oProduits).Where(oNom.Eq("thé")).Returning(oId).ToSQL())
+	tabEfface est un tableau associatif = oResultat.Lignes()[1]
+	dbgVérifieEgalité(tabEfface["produits__id"], 2, "la clé de la ligne effacée")
+	dbgVérifieEgalité(EbTestNomsEcritures(), "café", "il reste la ligne non visée")
+FIN
+
+// LE GARDE-FOU sur une vraie base : un Del ou un Update sans condition est refusé AVANT d'envoyer quoi que ce soit, la table reste intacte ; ForAllRows() l'autorise explicitement.
+PROCEDURE scenario_garde_fou_protege_la_table_sur_sqlite()
+	oBurin    est un cEbBurin = EbTestBurin()
+	oProduits est un cEbTable = EbTestProduits()
+	EbTestEnvoieEcriture(oBurin.Insert(oProduits).Values(EbTestLigneEcriture("café", 12.5, Vrai)).Values(EbTestLigneEcriture("thé", 8, Vrai)).ToSQL())
+	tabAucune est un tableau
+	sRefus    est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oBurin.Del(oProduits).Where(oBurin.AllOf(tabAucune)).ToSQL()
+	FAIRE
+		sRefus = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sRefus, "7008", "un Del dont les filtres facultatifs sont tous absents est refusé")
+	sRefusUpdate est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oBurin.Update(oProduits).Set(EbTestLigneEcriture("x", 1, Vrai)).ToSQL()
+	FAIRE
+		sRefusUpdate = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sRefusUpdate, "7008", "un Update sans condition est refusé")
+	dbgVérifieEgalité(EbTestNomsEcritures(), "café, thé", "rien n'a été envoyé : la table est intacte")
+	EbTestEnvoieEcriture(oBurin.Del(oProduits).ForAllRows().ToSQL())
+	dbgVérifieEgalité(EbTestNomsEcritures(), "", "ForAllRows() : tout est effacé, parce que c'est demandé")
+FIN
+
+// Une colonne NOT NULL omise n'est pas vue par Burin (il ne connaît pas encore les valeurs par défaut) : la base la refuse, par son message, et rien n'est écrit.
+PROCEDURE scenario_colonne_not_null_omise_refusee_par_la_base()
+	oBurin     est un cEbBurin           = EbTestBurin()
+	oProduits  est un cEbTable           = EbTestProduits()
+	tabSansNom est un tableau associatif
+	tabSansNom["prix"] = 5
+	oRequete  est un cEbRequete     = oBurin.Insert(oProduits).Values(tabSansNom).ToSQL()
+	oResultat est un cEbResultatSql = gConnexionEcritures.Envoie(oRequete.Texte(), oRequete.Parametres())
+	dbgVérifieFaux(oResultat.Succes(), "la base refuse : nom est NOT NULL")
+	dbgVérifieEgalité(EbTestNomsEcritures(), "", "rien n'a été écrit")
+FIN

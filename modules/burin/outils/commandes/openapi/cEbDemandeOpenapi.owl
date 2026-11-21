@@ -1,0 +1,58 @@
+// Les arguments de « ebony openapi [--sortie <fichier>] [--remplace] » : où écrire le document (sans --sortie : sur la sortie standard) et si un fichier existant peut être remplacé.
+// Chaque option avec valeur s'écrit « --sortie openapi.json » ou « --sortie=openapi.json ». Objet valeur immuable, rempli (et contrôlé) par le constructeur : un argument inconnu, une valeur absente, --sortie répétée
+// ou --remplace sans --sortie lèvent le code 25 (usage incorrect, code de sortie 2).
+cEbDemandeOpenapi est une Classe
+PRIVÉ
+	sSortie   est une chaîne = ""
+	bRemplace est un booléen = Faux
+
+	PROCEDURE Constructeur(Arguments est un tableau de chaînes)
+		nPos            est un entier  = 1
+		sArg            est une chaîne = ""
+		bSortieVue      est un booléen = Faux
+		bValeurAttendue est un booléen = Faux
+		TANTQUE nPos <= Arguments..Occurrence
+			sArg            = Arguments[nPos]
+			bValeurAttendue = Faux
+			SI sArg = "--remplace" ALORS
+				:bRemplace = Vrai
+			SINON
+				SI sArg = "--sortie" OU Gauche(sArg, 9) = "--sortie=" ALORS
+					SI bSortieVue ALORS
+						ExceptionDéclenche(25, "--sortie est donnée deux fois : un seul fichier de sortie.")
+					FIN
+					bSortieVue = Vrai
+					SI sArg = "--sortie" ALORS
+						nPos++
+						SI nPos > Arguments..Occurrence ALORS
+							bValeurAttendue = Vrai
+						SINON
+							:sSortie = Arguments[nPos]
+						FIN
+					SINON
+						:sSortie = Milieu(sArg, 10)
+					FIN
+					SI bValeurAttendue OU SansEspace(:sSortie) = "" OU Gauche(:sSortie, 2) = "--" ALORS
+						ExceptionDéclenche(25, "--sortie demande un nom de fichier : ebony openapi --sortie openapi.json")
+					FIN
+				SINON
+					ExceptionDéclenche(25, "Argument inconnu « " + sArg + " ». Usage : ebony openapi [--sortie <fichier>] [--remplace]")
+				FIN
+			FIN
+			nPos++
+		FIN
+		SI :bRemplace ET PAS bSortieVue ALORS
+			ExceptionDéclenche(25, "--remplace ne sert qu'avec --sortie : sans fichier de sortie, le document est écrit sur la sortie standard.")
+		FIN
+	FIN
+
+	// Le fichier où écrire, tel que donné (relatif au dossier du projet, ou absolu), ou « » pour la sortie standard.
+	PROCEDURE PUBLIQUE Sortie() : chaîne
+		RENVOYER :sSortie
+	FIN
+
+	// Vrai si un fichier de sortie existant peut être remplacé (--remplace).
+	PROCEDURE PUBLIQUE Remplace() : booléen
+		RENVOYER :bRemplace
+	FIN
+FIN

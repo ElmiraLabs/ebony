@@ -1,0 +1,323 @@
+// Lecture du manifeste d'un module (modules/<nom>/execution/modules/<nom>.json, copié dans ebony/modules/<nom>.json du projet) : des DONNÉES, jamais du code exécuté.
+// Le manifeste déclare les variables d'environnement du module (« environnement ») et les fichiers qu'il écrit dans le projet (« fichiers », voir EbFichiersDuManifeste) : les variables sont des entrées du même format que config/env.json
+// (cle, type, valeurs, defaut, description, obligatoire, secret). Un manifeste illisible est une exception de code 22 (installation d'ebony abîmée : il faut la réinstaller).
+// Fonctions sans accès au disque : le texte lu est passé en argument, ce qui les rend testables sans faux disque.
+EbLectureManifeste est une CollectionDeProcédures
+
+	// Les variables d'environnement déclarées dans le texte d'un manifeste qui s'appliquent à ce projet (des cEbVariableEnv), dans l'ordre du fichier. Un manifeste sans « environnement » n'en déclare aucune.
+	// Une entrée peut porter « fournisseur » (une liste de textes) : elle n'existe alors que pour ces fournisseurs ; sans ce membre, elle existe toujours. sFournisseur est le choix du projet, un texte que le cœur ne connaît pas (« » : un projet qui n'en a pas ne reçoit que les entrées sans condition).
+	// Toutes les entrées sont lues et vérifiées, y compris celles qui ne s'appliquent pas : un manifeste abîmé est refusé quel que soit le fournisseur.
+	// {dossier} dans « defaut » est laissé tel quel (EbVariablesSchema le remplace par le dossier du projet).
+	// sChemin ne sert qu'aux messages d'erreur. Lève (22) au premier défaut, en nommant l'entrée.
+	PROCEDURE EbVariablesDuManifeste(sTexte est une chaîne, sChemin est une chaîne, sFournisseur est une chaîne) : tableau
+		tabVariables est un tableau
+		j            est un JSON
+		nIndice      est un entier  = 0
+		SI PAS JSONValide(sTexte) ALORS
+			ExceptionDéclenche(22, "Le manifeste " + sChemin + " n'est pas du JSON valide. Réinstallez ebony.")
+		FIN
+		j = ChaîneVersJSON(sTexte)
+		SI JSONExiste(j, "environnement") ALORS
+			POUR TOUT v DE j.environnement
+				nIndice++
+				sOuEntree est une chaîne        = sChemin + " : environnement[" + nIndice + "]"
+				oVariable est un cEbVariableEnv = EbVariableDuManifeste(v, sOuEntree)
+				SI EbEntreeConvientAuFournisseur(v, sOuEntree, sFournisseur) ALORS
+					TableauAjoute(tabVariables, oVariable)
+				FIN
+			FIN
+		FIN
+		RENVOYER tabVariables
+	FIN
+
+	// Vrai si l'entrée du manifeste s'applique à ce fournisseur : elle n'a pas de membre « fournisseur », ou sa liste le contient (sans tenir compte de la casse). Une liste mal formée lève (22).
+	PROCEDURE EbEntreeConvientAuFournisseur(v est un JSON, sOu est une chaîne, sFournisseur est une chaîne) : booléen
+		SI PAS JSONExiste(v, "fournisseur") ALORS
+			RENVOYER Vrai
+		FIN
+		// Une liste, et rien d'autre (le type d'un JSON ne distingue pas une liste d'un objet : on regarde sa forme écrite, comme pour « dependances »).
+		SI Gauche(JSONVersChaîne(v.fournisseur, psdMinifie), 1) <> "[" ALORS
+			ExceptionDéclenche(22, sOu + " : « fournisseur » doit être une liste de textes. Réinstallez ebony.")
+		FIN
+		bConvient est un booléen = Faux
+		nIndiceF  est un entier  = 0
+		POUR TOUT sFournisseurPermis DE v.fournisseur
+			nIndiceF++
+			SI TypeVar(sFournisseurPermis) <> owlChaîne OU Taille(sFournisseurPermis) < 1 ALORS
+				ExceptionDéclenche(22, sOu + " : fournisseur[" + nIndiceF + "] doit être un texte non vide. Réinstallez ebony.")
+			FIN
+			SI sFournisseur <> "" ET Minuscule(sFournisseurPermis) = Minuscule(sFournisseur) ALORS
+				bConvient = Vrai
+			FIN
+		FIN
+		RENVOYER bConvient
+	FIN
+
+	// Une entrée « environnement » du manifeste. sOu situe l'entrée dans les messages. Lève (22) si elle est invalide.
+	PROCEDURE EbVariableDuManifeste(v est un JSON, sOu est une chaîne) : cEbVariableEnv
+		tabValeurs   est un tableau de chaînes
+		sCle         est une chaîne            = ""
+		sNature      est une chaîne            = ""
+		sDefaut      est une chaîne            = ""
+		sDescription est une chaîne            = ""
+		bADefaut     est un booléen            = Faux
+		bSecret      est un booléen            = Faux
+		bObligatoire est un booléen            = Faux
+
+		SI JSONExiste(v, "cle") ALORS
+			SI TypeVar(v.cle) = owlChaîne ALORS
+				sCle = v.cle
+			FIN
+		FIN
+		SI PAS EbEnvCleValide(sCle) ALORS
+			ExceptionDéclenche(22, sOu + " : « cle » absente ou invalide. Réinstallez ebony.")
+		FIN
+		// Le membre « type » se lit par v["type"] : « .type » est refusé par OWL (propriété de JSON).
+		SI JSONExiste(v, "type") ALORS
+			SI TypeVar(v["type"]) = owlChaîne ALORS
+				sNature = v["type"]
+			FIN
+		FIN
+		SI PAS EbEnvNatureConnue(sNature) ALORS
+			ExceptionDéclenche(22, sOu + " (" + sCle + ") : « type » absent ou inconnu. Réinstallez ebony.")
+		FIN
+		SI sNature = "liste" ALORS
+			SI JSONExiste(v, "valeurs") ALORS
+				POUR TOUT sPermise DE v.valeurs
+					SI TypeVar(sPermise) = owlChaîne ET Taille(sPermise) > 0 ALORS
+						TableauAjoute(tabValeurs, sPermise)
+					FIN
+				FIN
+			FIN
+			SI tabValeurs..Occurrence = 0 ALORS
+				ExceptionDéclenche(22, sOu + " (" + sCle + ") : le type liste demande « valeurs » (textes non vides). Réinstallez ebony.")
+			FIN
+		FIN
+		SI JSONExiste(v, "defaut") ALORS
+			SI TypeVar(v.defaut) = owlChaîne ALORS
+				bADefaut = Vrai
+				sDefaut  = v.defaut
+			SINON
+				ExceptionDéclenche(22, sOu + " (" + sCle + ") : « defaut » doit être un texte. Réinstallez ebony.")
+			FIN
+		FIN
+		SI JSONExiste(v, "description") ALORS
+			SI TypeVar(v.description) = owlChaîne ALORS
+				sDescription = v.description
+			FIN
+		FIN
+		SI JSONExiste(v, "secret") ALORS
+			SI TypeVar(v.secret) = owlBooléen ALORS
+				bSecret = v.secret
+			FIN
+		FIN
+		SI JSONExiste(v, "obligatoire") ALORS
+			SI TypeVar(v.obligatoire) = owlBooléen ALORS
+				bObligatoire = v.obligatoire
+			FIN
+		FIN
+		SI bADefaut ALORS
+			SI PAS EbEnvValeurConvient(sNature, sDefaut, tabValeurs) ALORS
+				ExceptionDéclenche(22, sOu + " (" + sCle + ") : la valeur par défaut ne convient pas au type " + sNature + ". Réinstallez ebony.")
+			FIN
+		FIN
+		oVariable est un cEbVariableEnv(sCle, sNature, tabValeurs, bObligatoire, bADefaut, sDefaut, bSecret, sDescription)
+		RENVOYER oVariable
+	FIN
+
+	// Vrai si le texte contient une accolade qui n'est pas celle de {table_utilisateurs} (le texte sans ce jeton ne doit plus en contenir).
+	PROCEDURE EbAccoladeInconnue(sTexte est une chaîne) : booléen
+		sReste est une chaîne = Remplace(sTexte, "{table_utilisateurs}", "")
+		RENVOYER Position(sReste, "{") > 0 OU Position(sReste, "}") > 0
+	FIN
+
+	// Le dossier des manifestes dans un PROJET : ebony/modules (la copie, avec la bibliothèque, de ceux des modules installés), relatif au projet, avec des « / ».
+	PROCEDURE EbDossierManifestesProjet() : chaîne
+		RENVOYER "ebony/modules"
+	FIN
+
+	// Le garde des routes déclaré dans le texte d'un manifeste (membre « routes » : « proprietes » et « procedures », des tableaux de lignes de code OWL ; une tabulation s'écrit \t). Un manifeste sans « routes » n'en fournit pas :
+	// le garde rendu est alors vide. Les lignes sont du CODE écrit dans les contrôleurs générés : elles viennent de la copie des manifestes dans ebony/modules/, restaurée d'après l'installation (comme le reste de ebony/). Lève (22) si le membre est mal formé.
+	PROCEDURE EbGardeDuManifeste(sTexte est une chaîne, sChemin est une chaîne) : cEbGardeRoutes
+		tabProprietes est un tableau de chaînes
+		tabProcedures est un tableau de chaînes
+		j             est un JSON
+		SI PAS JSONValide(sTexte) ALORS
+			ExceptionDéclenche(22, "Le manifeste " + sChemin + " n'est pas du JSON valide. Restaurez la bibliothèque avec « ebony restore » ou réinstallez ebony.")
+		FIN
+		j = ChaîneVersJSON(sTexte)
+		SI JSONExiste(j, "routes") ALORS
+			tabProprietes = EbLignesDuManifeste(j.routes, "proprietes", sChemin)
+			tabProcedures = EbLignesDuManifeste(j.routes, "procedures", sChemin)
+		FIN
+		oGarde est un cEbGardeRoutes(tabProprietes, tabProcedures)
+		RENVOYER oGarde
+	FIN
+
+	// Le garde des routes que fournissent les modules DU PROJET du dossier de lancement : les membres « routes » de ses manifestes (ebony/modules/*.json, par ordre alphabétique), l'un après l'autre. Sans manifeste ni « routes », le garde est vide.
+	// Lève (22) si un manifeste est illisible. Le cœur ne sait pas quel module fournit le garde ni ce qu'il contient : « make » le recopie dans les contrôleurs, « openapi » y cherche un jeton.
+	PROCEDURE EbGardeRoutesDuProjet(oSysteme est un iEbSystemeFichiers, sLancement est une chaîne) : cEbGardeRoutes
+		tabAucune est un tableau de chaînes
+		oGarde    est un cEbGardeRoutes(tabAucune, tabAucune)
+		sDossier  est une chaîne                              = EbJointChemin(sLancement, Remplace(EbDossierManifestesProjet(), "/", "\"))
+		POUR TOUT sNom DE oSysteme.ListeFichiers(sDossier)
+			SI Droite(Minuscule(sNom), 5) = ".json" ALORS
+				sManifeste est une chaîne        = EbJointChemin(sDossier, sNom)
+				oDuModule  est un cEbGardeRoutes = EbGardeDuManifeste(oSysteme.LitTexte(sManifeste), sManifeste)
+				oGarde = oGarde.Suivi(oDuModule)
+			FIN
+		FIN
+		RENVOYER oGarde
+	FIN
+
+	// Les lignes d'un membre de « routes » : un tableau de textes (une ligne vide est permise). Lève (22) si ce n'est pas le cas.
+	PROCEDURE EbLignesDuManifeste(v est un JSON, sMembre est une chaîne, sChemin est une chaîne) : tableau de chaînes
+		tabLignes est un tableau de chaînes
+		SI JSONExiste(v, sMembre) ALORS
+			POUR TOUT sLigne DE v[sMembre]
+				SI TypeVar(sLigne) <> owlChaîne ALORS
+					ExceptionDéclenche(22, sChemin + " : routes." + sMembre + " ne contient que des textes. Restaurez la bibliothèque avec « ebony restore » ou réinstallez ebony.")
+				FIN
+				TableauAjoute(tabLignes, sLigne)
+			FIN
+		FIN
+		RENVOYER tabLignes
+	FIN
+
+	// Les fichiers déclarés dans le texte d'un manifeste (des cEbFichierModule), dans l'ordre du fichier. Un manifeste sans « fichiers » n'en déclare aucun. sModule est le nom du dossier du module.
+	// Chaque entrée : « chemin » (dans config/ ou database/, avec des « / »), « lignes » (les lignes du fichier, \t pour une tabulation) et, facultatifs : « option » (« auth »), « capacite » (un mot : le fichier n'est écrit que si le fournisseur du projet\n	// l'offre), « existant » (« refuse », le défaut, ou « conserve »), « commande » (« new » : seul « ebony new » l'écrit) et « etape » (la commande à lancer ensuite). Lève (22) au premier défaut.
+	PROCEDURE EbFichiersDuManifeste(sTexte est une chaîne, sChemin est une chaîne, sModule est une chaîne) : tableau
+		tabFichiers est un tableau
+		j           est un JSON
+		nIndice     est un entier  = 0
+		SI PAS JSONValide(sTexte) ALORS
+			ExceptionDéclenche(22, "Le manifeste " + sChemin + " n'est pas du JSON valide. Réinstallez ebony.")
+		FIN
+		j = ChaîneVersJSON(sTexte)
+		SI JSONExiste(j, "fichiers") ALORS
+			POUR TOUT v DE j.fichiers
+				nIndice++
+				TableauAjoute(tabFichiers, EbFichierDuManifeste(v, sChemin + " : fichiers[" + nIndice + "]", sModule))
+			FIN
+		FIN
+		RENVOYER tabFichiers
+	FIN
+
+	// Une entrée « fichiers » du manifeste. Le chemin est limité à config/ (la configuration du projet) et database/ (ses données) : un manifeste ne peut pas écrire ailleurs. Ces fichiers sont ensuite à l'utilisateur. Lève (22) si l'entrée est invalide.
+	PROCEDURE EbFichierDuManifeste(v est un JSON, sOu est une chaîne, sModule est une chaîne) : cEbFichierModule
+		tabLignes est un tableau de chaînes
+		sChemin   est une chaîne            = ""
+		sOption   est une chaîne            = ""
+		sCapacite est une chaîne            = ""
+		sExistant est une chaîne            = "refuse"
+		sCommande est une chaîne            = ""
+		sEtape    est une chaîne            = ""
+		SI JSONExiste(v, "chemin") ALORS
+			SI TypeVar(v.chemin) = owlChaîne ALORS
+				sChemin = v.chemin
+			FIN
+		FIN
+		SI PAS EbCheminFichierModuleValide(sChemin) ALORS
+			ExceptionDéclenche(22, sOu + " : « chemin » doit être un fichier de config/ ou de database/ (lettres, chiffres, points, tirets et soulignés, avec des « / », sans « .. » : config/Auth.owl). Réinstallez ebony.")
+		FIN
+		SI JSONExiste(v, "option") ALORS
+			SI TypeVar(v.option) = owlChaîne ALORS
+				sOption = v.option
+			SINON
+				sOption = "?"
+			FIN
+			SI sOption <> "auth" ALORS
+				ExceptionDéclenche(22, sOu + " : « option » ne peut être que « auth ». Réinstallez ebony.")
+			FIN
+		FIN
+		SI JSONExiste(v, "capacite") ALORS
+			SI TypeVar(v.capacite) = owlChaîne ALORS
+				sCapacite = v.capacite
+			FIN
+			SI PAS EbNomModuleValide(sCapacite) ALORS
+				ExceptionDéclenche(22, sOu + " : « capacite » doit être un nom valide (lettres minuscules ASCII, chiffres et soulignés, commençant par une lettre). Réinstallez ebony.")
+			FIN
+		FIN
+		SI JSONExiste(v, "existant") ALORS
+			sExistant = "?"
+			SI TypeVar(v.existant) = owlChaîne ALORS
+				sExistant = v.existant
+			FIN
+			SI sExistant <> "refuse" ET sExistant <> "conserve" ALORS
+				ExceptionDéclenche(22, sOu + " : « existant » ne peut être que « refuse » ou « conserve ». Réinstallez ebony.")
+			FIN
+		FIN
+		SI JSONExiste(v, "commande") ALORS
+			SI TypeVar(v.Commande) = owlChaîne ALORS
+				sCommande = v.Commande
+			SINON
+				sCommande = "?"
+			FIN
+			SI sCommande <> "new" ALORS
+				ExceptionDéclenche(22, sOu + " : « commande » ne peut être que « new ». Réinstallez ebony.")
+			FIN
+		FIN
+		SI JSONExiste(v, "etape") ALORS
+			SI TypeVar(v.etape) = owlChaîne ALORS
+				sEtape = v.etape
+			FIN
+			SI PAS EbEtapeValide(sEtape) ALORS
+				ExceptionDéclenche(22, sOu + " : « etape » doit être une commande d'ebony (« ebony » puis des mots en minuscules ASCII, chiffres, tirets et soulignés, séparés par des espaces). Réinstallez ebony.")
+			FIN
+		FIN
+		tabLignes = EbLignesDuManifeste(v, "lignes", sOu)
+		SI tabLignes..Occurrence = 0 ALORS
+			ExceptionDéclenche(22, sOu + " : « lignes » doit contenir au moins une ligne. Réinstallez ebony.")
+		FIN
+		// {table_utilisateurs} est le seul remplacement connu et il exige l'option « auth ».
+		bAccolades est un booléen = Faux
+		bJeton     est un booléen = Faux
+		POUR TOUT sLigne DE tabLignes
+			SI EbAccoladeInconnue(sLigne) ALORS bAccolades = Vrai
+			SI Position(sLigne, "{table_utilisateurs}") > 0 ALORS bJeton = Vrai
+		FIN
+		SI bAccolades ALORS
+			ExceptionDéclenche(22, sOu + " : une ligne contient une accolade autre que {table_utilisateurs}. Réinstallez ebony.")
+		FIN
+		SI bJeton ET sOption <> "auth" ALORS
+			ExceptionDéclenche(22, sOu + " : {table_utilisateurs} n'est remplacé qu'avec l'option « auth ». Réinstallez ebony.")
+		FIN
+		bConserve est un booléen                                                                                         = (sExistant = "conserve")
+		oFichier  est un cEbFichierModule(sModule, sChemin, sOption, sCapacite, bConserve, sCommande, sEtape, tabLignes)
+		RENVOYER oFichier
+	FIN
+
+	// Vrai si le chemin est celui d'un fichier de config/ ou de database/ : le dossier, « / », puis un nom (lettres ASCII, chiffres, point, tiret, souligné), éventuellement dans des sous-dossiers de même forme ; ni « .. », ni « \ », ni « : », ni chemin absolu.
+	PROCEDURE EbCheminFichierModuleValide(sChemin est une chaîne) : booléen
+		bDossier est un booléen = (Gauche(sChemin, 7) = "config/" ET Taille(sChemin) > 7) OU (Gauche(sChemin, 9) = "database/" ET Taille(sChemin) > 9)
+		SI PAS bDossier ALORS
+			RENVOYER Faux
+		FIN
+		SI Position(sChemin, "..") > 0 OU Position(sChemin, "//") > 0 OU Droite(sChemin, 1) = "/" ALORS
+			RENVOYER Faux
+		FIN
+		POUR i = 1 À Taille(sChemin)
+			nCode est un entier  = Asc(Milieu(sChemin, i, 1))
+			bBon  est un booléen = (nCode >= 48 ET nCode <= 57) OU (nCode >= 65 ET nCode <= 90) OU (nCode >= 97 ET nCode <= 122) OU nCode = 46 OU nCode = 45 OU nCode = 95 OU nCode = 47
+			SI PAS bBon ALORS
+				RENVOYER Faux
+			FIN
+		FIN
+		RENVOYER Vrai
+	FIN
+
+	// Vrai si le texte est une étape à lancer : « ebony » puis un ou plusieurs mots (lettres minuscules ASCII, chiffres, tirets et soulignés), séparés par un seul espace. Elle est affichée telle quelle : pas d'autre caractère.
+	PROCEDURE EbEtapeValide(sTexte est une chaîne) : booléen
+		SI Gauche(sTexte, 6) <> "ebony " OU Taille(sTexte) = 6 OU Droite(sTexte, 1) = " " OU Position(sTexte, "  ") > 0 ALORS
+			RENVOYER Faux
+		FIN
+		POUR i = 7 À Taille(sTexte)
+			nCode est un entier  = Asc(Milieu(sTexte, i, 1))
+			bBon  est un booléen = (nCode >= 48 ET nCode <= 57) OU (nCode >= 97 ET nCode <= 122) OU nCode = 45 OU nCode = 95 OU nCode = 32
+			SI PAS bBon ALORS
+				RENVOYER Faux
+			FIN
+		FIN
+		RENVOYER Vrai
+	FIN
+FIN

@@ -1,0 +1,47 @@
+// Quels fichiers des modules écrire pour ce projet et cette commande, d'après ce que le manifeste de chaque fichier demande : fonctions pures (aucun accès au disque), testées dans tests/unitaires/commandes/nouveau/.
+// Le cœur ne sait ni ce que contient un fichier ni pourquoi il dépend d'une capacité : il compare les mots que le manifeste donne.
+EbFichiersModules est une CollectionDeProcédures
+
+	// Les fichiers des modules à écrire pour ce projet (tableau de cEbFichierModule), dans l'ordre. sCommande : « new », « init » ou « add ». Un fichier est écrit si :
+	//   - il ne se limite pas à une autre commande (« commande ») ;
+	//   - le fournisseur du projet offre sa capacité (« capacite »), ou il n'en exige aucune ;
+	//   - il ne dépend d'aucune option, ou d'« auth » et le projet la demande (avec {table_utilisateurs} remplacé).
+	PROCEDURE EbFichiersAEcrire(fichiers est un tableau, oOptions est un cEbOptionsProjet, sCommande est une chaîne, oFournisseurs est un cEbFournisseursModule) : tableau
+		tabAEcrire est un tableau
+		POUR TOUT oFichier DE fichiers
+			SI EbFichierConvient(oFichier, oOptions, sCommande) ET (oFichier.Capacite() = "" OU oFournisseurs.Offre(oFichier.Capacite(), oOptions.BaseDonnees())) ALORS
+				SI oFichier.Option() = "" ALORS
+					TableauAjoute(tabAEcrire, oFichier)
+				SINON
+					oResolu est un cEbFichierModule = oFichier.Resolue(oOptions.TableUtilisateurs())
+					TableauAjoute(tabAEcrire, oResolu)
+				FIN
+			FIN
+		FIN
+		RENVOYER tabAEcrire
+	FIN
+
+	// Les capacités (sans doublon, dans l'ordre) que des fichiers de ce module demandent pour cette commande et cette option, et que le fournisseur du projet n'offre pas : ces fichiers ne seront pas écrits, et « ebony add » le dit.
+	PROCEDURE EbCapacitesNonOffertes(fichiers est un tableau, oOptions est un cEbOptionsProjet, sCommande est une chaîne, oFournisseurs est un cEbFournisseursModule) : tableau de chaînes
+		tabNonOffertes est un tableau de chaînes
+		POUR TOUT oFichier DE fichiers
+			SI EbFichierConvient(oFichier, oOptions, sCommande) ET oFichier.Capacite() <> "" ALORS
+				SI PAS oFournisseurs.Offre(oFichier.Capacite(), oOptions.BaseDonnees()) ET TableauCherche(tabNonOffertes, oFichier.Capacite()) < 1 ALORS
+					TableauAjoute(tabNonOffertes, oFichier.Capacite())
+				FIN
+			FIN
+		FIN
+		RENVOYER tabNonOffertes
+	FIN
+
+	// Vrai si ce fichier concerne cette commande et cette option (la capacité du fournisseur se juge à part).
+	PROCEDURE EbFichierConvient(oFichier est un cEbFichierModule, oOptions est un cEbOptionsProjet, sCommande est une chaîne) : booléen
+		SI oFichier.Commande() <> "" ET oFichier.Commande() <> sCommande ALORS
+			RENVOYER Faux
+		FIN
+		SI oFichier.Option() = "auth" ET PAS oOptions.Auth() ALORS
+			RENVOYER Faux
+		FIN
+		RENVOYER Vrai
+	FIN
+FIN

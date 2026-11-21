@@ -1,0 +1,198 @@
+// Tests de cEbColonne et cEbTable : la définition d'une colonne (nature, NULL, clé), les conditions et les ordres qu'elle construit, et les valeurs refusées à la construction (jamais un SQL faux).
+// Aucune base : les conditions se lisent par leur texte et leurs paramètres.
+
+// Lance une comparaison et rend « code|message » si elle lève, ou « » si elle réussit. sOperateur : Eq, Ne, Gt, Gte, Lt, Lte, Like.
+PROCEDURE EbTestRefusComparaison(oColonne est un cEbColonne, sOperateur est une chaîne, valeur est un JSON) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oEssaiComparaison est un cEbSql
+		SELON sOperateur
+			CAS "Eq"
+			oEssaiComparaison = oColonne.Eq(valeur)
+			CAS "Ne"
+			oEssaiComparaison = oColonne.Ne(valeur)
+			CAS "Gt"
+			oEssaiComparaison = oColonne.Gt(valeur)
+			CAS "Gte"
+			oEssaiComparaison = oColonne.Gte(valeur)
+			CAS "Lt"
+			oEssaiComparaison = oColonne.Lt(valeur)
+			CAS "Lte"
+			oEssaiComparaison = oColonne.Lte(valeur)
+			CAS "Like"
+			oEssaiComparaison = oColonne.Like(valeur)
+		FIN
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Lance IsIn ou NotIn et rend « code|message » si il lève, ou « » s'il réussit.
+PROCEDURE EbTestRefusListe(oColonne est un cEbColonne, bDans est un booléen, valeurs est un tableau) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oEssaiListe est un cEbSql
+		SI bDans ALORS
+			oEssaiListe = oColonne.IsIn(valeurs)
+		SINON
+			oEssaiListe = oColonne.NotIn(valeurs)
+		FIN
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Une colonne se lit sans requête : table, nom, nature, NULL, clé, référence « table.colonne ».
+PROCEDURE scenario_definition_lisible()
+	oTable est un cEbTable   = EbTestProduits()
+	oId    est un cEbColonne = oTable.ColonneNommee("id")
+	oPrix  est un cEbColonne = oTable.ColonneNommee("PRIX")
+	dbgVérifieEgalité(oTable.Nom(), "produits", "le nom de la table")
+	dbgVérifieEgalité(oTable.Colonnes()..Occurrence, 5, "cinq colonnes, dans l'ordre d'ajout")
+	dbgVérifieEgalité(oId.Reference(), "produits.id", "la référence")
+	dbgVérifieEgalité(oId.NomTable(), "produits", "sa table")
+	dbgVérifieEgalité(oId.Nature(), "entier", "sa nature")
+	dbgVérifieVrai(oId.Cle(), "id est la clé")
+	dbgVérifieVrai(oId.NotNull(), "id refuse NULL")
+	dbgVérifieEgalité(oPrix.Nom(), "prix", "la casse du nom demandé ne compte pas")
+	dbgVérifieFaux(oPrix.Cle(), "prix n'est pas la clé")
+	dbgVérifieFaux(oPrix.NotNull(), "prix accepte NULL")
+FIN
+
+// Une définition invalide est refusée (7005) en nommant le fautif : nature inconnue, nom vide, colonne en double, colonne inconnue.
+PROCEDURE scenario_definition_invalide_refusee()
+	oTable est un cEbTable = EbTestProduits()
+	sRes   est une chaîne  = ""
+	QUAND EXCEPTION DANS
+		oTable.AjouteColonne("poids", "decimal", Faux, Faux)
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	dbgVérifieEgalité(Gauche(sRes, 5), "7005|", "nature inconnue")
+	dbgVérifieVrai(Position(sRes, "decimal") > 0 ET Position(sRes, "poids") > 0, "la colonne et la nature sont citées : " + sRes)
+	sRes = ""
+	QUAND EXCEPTION DANS
+		oTable.AjouteColonne("", "texte", Faux, Faux)
+	FAIRE
+		sRes = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sRes, "7005", "nom vide")
+	sRes = ""
+	QUAND EXCEPTION DANS
+		oTable.AjouteColonne("Prix", "reel", Faux, Faux)
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	dbgVérifieEgalité(Gauche(sRes, 5), "7005|", "colonne en double (la casse ne compte pas)")
+	sRes = ""
+	QUAND EXCEPTION DANS
+		oEssaiAbsente est un cEbColonne = oTable.ColonneNommee("couleur")
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	dbgVérifieEgalité(Gauche(sRes, 5), "7005|", "colonne inconnue")
+	dbgVérifieVrai(Position(sRes, "couleur") > 0 ET Position(sRes, "produits") > 0, "la table et la colonne sont citées : " + sRes)
+	sRes = ""
+	QUAND EXCEPTION DANS
+		oEssaiSansNom est un cEbTable("")
+	FAIRE
+		sRes = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sRes, "7005", "table sans nom")
+FIN
+
+// Les comparaisons : colonne, opérateur, paramètre (la valeur n'est pas dans le texte).
+PROCEDURE scenario_comparaisons()
+	oTable est un cEbTable   = EbTestProduits()
+	oPrix  est un cEbColonne = oTable.ColonneNommee("prix")
+	dbgVérifieEgalité(EbTestTexte(oPrix.Eq(10)), `"produits"."prix" = {p1}`, "Eq")
+	dbgVérifieEgalité(EbTestTexte(oPrix.Ne(10)), `"produits"."prix" <> {p1}`, "Ne")
+	dbgVérifieEgalité(EbTestTexte(oPrix.Gt(10)), `"produits"."prix" > {p1}`, "Gt")
+	dbgVérifieEgalité(EbTestTexte(oPrix.Gte(10)), `"produits"."prix" >= {p1}`, "Gte")
+	dbgVérifieEgalité(EbTestTexte(oPrix.Lt(10)), `"produits"."prix" < {p1}`, "Lt")
+	dbgVérifieEgalité(EbTestTexte(oPrix.Lte(10)), `"produits"."prix" <= {p1}`, "Lte")
+	oNom est un cEbColonne = oTable.ColonneNommee("nom")
+	dbgVérifieEgalité(EbTestTexte(oNom.Like("a%")), `"produits"."nom" LIKE {p1}`, "Like")
+	dbgVérifieEgalité(EbTestTexte(oPrix.IsNull()), `"produits"."prix" IS NULL`, "IsNull : aucune valeur")
+	dbgVérifieEgalité(EbTestTexte(oPrix.IsNotNull()), `"produits"."prix" IS NOT NULL`, "IsNotNull")
+	dbgVérifieEgalité(EbTestTexte(oPrix.Between(5, 10)), `"produits"."prix" BETWEEN {p1} AND {p2}`, "Between : deux valeurs")
+	dbgVérifieEgalité(EbTestTexte(oPrix.Asc()), `"produits"."prix" ASC`, "Asc")
+	dbgVérifieEgalité(EbTestTexte(oPrix.Desc()), `"produits"."prix" DESC`, "Desc")
+FIN
+
+// Les valeurs sont vérifiées par rapport à la nature de la colonne, dès la construction : le bon type passe, le mauvais est refusé (7002) en disant pourquoi.
+PROCEDURE scenario_valeurs_verifiees_selon_la_nature()
+	oTable  est un cEbTable   = EbTestProduits()
+	oId     est un cEbColonne = oTable.ColonneNommee("id")
+	oNom    est un cEbColonne = oTable.ColonneNommee("nom")
+	oPrix   est un cEbColonne = oTable.ColonneNommee("prix")
+	oActif  est un cEbColonne = oTable.ColonneNommee("actif")
+	oCreeLe est un cEbColonne = oTable.ColonneNommee("cree_le")
+	dbgVérifieEgalité(EbTestRefusComparaison(oId, "Eq", 3), "", "entier pour entier")
+	sRes est une chaîne = EbTestRefusComparaison(oId, "Eq", "abc")
+	dbgVérifieEgalité(Gauche(sRes, 5), "7002|", "texte pour entier")
+	dbgVérifieVrai(Position(sRes, "produits.id") > 0 ET Position(sRes, "chaîne") > 0 ET Position(sRes, "entier") > 0, "message : la colonne, le type donné, la nature : " + sRes)
+	dbgVérifieEgalité(Gauche(EbTestRefusComparaison(oId, "Eq", 3.5), 5), "7002|", "réel pour entier")
+	dbgVérifieEgalité(EbTestRefusComparaison(oPrix, "Gt", 10), "", "entier pour réel : accepté")
+	dbgVérifieEgalité(EbTestRefusComparaison(oPrix, "Gt", 10.5), "", "réel pour réel")
+	dbgVérifieEgalité(Gauche(EbTestRefusComparaison(oPrix, "Gt", "cher"), 5), "7002|", "texte pour réel")
+	dbgVérifieEgalité(EbTestRefusComparaison(oNom, "Eq", "café"), "", "texte pour texte")
+	dbgVérifieEgalité(Gauche(EbTestRefusComparaison(oNom, "Eq", 7), 5), "7002|", "entier pour texte")
+	dbgVérifieEgalité(EbTestRefusComparaison(oActif, "Eq", Vrai), "", "booléen pour booléen")
+	dbgVérifieEgalité(Gauche(EbTestRefusComparaison(oActif, "Eq", 1), 5), "7002|", "entier pour booléen : refusé, la base relit 1 mais on écrit Vrai")
+	dbgVérifieEgalité(EbTestRefusComparaison(oCreeLe, "Gt", "2026-11-13T09:30:00Z"), "", "date-heure en texte ISO")
+	dbgVérifieEgalité(Gauche(EbTestRefusComparaison(oCreeLe, "Gt", 5), 5), "7002|", "entier pour date-heure")
+FIN
+
+// Null n'est jamais une valeur de comparaison (« = NULL » est toujours faux) : le message envoie vers IsNull().
+PROCEDURE scenario_null_refuse_pour_une_comparaison()
+	oTable est un cEbTable   = EbTestProduits()
+	oPrix  est un cEbColonne = oTable.ColonneNommee("prix")
+	sRes   est une chaîne    = EbTestRefusComparaison(oPrix, "Eq", Null)
+	dbgVérifieEgalité(Gauche(sRes, 5), "7002|", "Eq(Null) refusé")
+	dbgVérifieVrai(Position(sRes, "IsNull") > 0, "le message cite IsNull : " + sRes)
+FIN
+
+// Like ne s'applique qu'à une colonne de texte.
+PROCEDURE scenario_like_seulement_pour_du_texte()
+	oTable est un cEbTable   = EbTestProduits()
+	oPrix  est un cEbColonne = oTable.ColonneNommee("prix")
+	sRes   est une chaîne    = EbTestRefusComparaison(oPrix, "Like", "1%")
+	dbgVérifieEgalité(Gauche(sRes, 5), "7002|", "Like sur un réel")
+	dbgVérifieVrai(Position(sRes, "texte") > 0, "le message dit pourquoi : " + sRes)
+FIN
+
+// IN : un paramètre par valeur, toutes vérifiées ; une liste vide est refusée (7003).
+PROCEDURE scenario_in_et_not_in()
+	oTable est un cEbTable   = EbTestProduits()
+	oId    est un cEbColonne = oTable.ColonneNommee("id")
+	tabIds est un tableau
+	TableauAjoute(tabIds, 1)
+	TableauAjoute(tabIds, 2)
+	TableauAjoute(tabIds, 3)
+	dbgVérifieEgalité(EbTestTexte(oId.IsIn(tabIds)), `"produits"."id" IN ({p1}, {p2}, {p3})`, "IsIn")
+	dbgVérifieEgalité(EbTestTexte(oId.NotIn(tabIds)), `"produits"."id" NOT IN ({p1}, {p2}, {p3})`, "NotIn")
+	tabVide est un tableau
+	dbgVérifieEgalité(Gauche(EbTestRefusListe(oId, Vrai, tabVide), 5), "7003|", "IsIn vide")
+	dbgVérifieEgalité(Gauche(EbTestRefusListe(oId, Faux, tabVide), 5), "7003|", "NotIn vide")
+	tabMauvaise est un tableau
+	TableauAjoute(tabMauvaise, 1)
+	TableauAjoute(tabMauvaise, "deux")
+	dbgVérifieEgalité(Gauche(EbTestRefusListe(oId, Vrai, tabMauvaise), 5), "7002|", "une valeur de la liste du mauvais type")
+	dbgVérifieEgalité(EbTestRefusListe(oId, Vrai, tabIds), "", "le cas valide ne lève rien")
+FIN
+
+// Between vérifie ses deux bornes.
+PROCEDURE scenario_between_verifie_les_deux_bornes()
+	oTable est un cEbTable   = EbTestProduits()
+	oPrix  est un cEbColonne = oTable.ColonneNommee("prix")
+	sRes   est une chaîne    = ""
+	QUAND EXCEPTION DANS
+		oEssaiBornes est un cEbSql = oPrix.Between(5, "dix")
+	FAIRE
+		sRes = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sRes, "7002", "la seconde borne est vérifiée aussi")
+FIN

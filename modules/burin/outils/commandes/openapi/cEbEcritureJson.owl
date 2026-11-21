@@ -1,0 +1,99 @@
+// Écrit un document JSON indenté (une tabulation par niveau, une valeur par ligne), pour « ebony openapi ». Les virgules sont posées toutes seules : on ouvre un objet ou un tableau, on y écrit des membres (avec une clé) ou des éléments (clé vide), on le ferme.
+// Pourquoi pas le type JSON d'OWL : il ne crée pas les objets imbriqués tout seul (« Seuls les tableaux ou les combinaisons peuvent être indexés ») et l'ordre des clés d'un document OpenAPI se lit mieux tel qu'on l'écrit.
+// Les textes passent par EbJsonChaine (échappement). Les nombres et les valeurs déjà en JSON passent par EcritBrut, tels quels : l'appelant les a contrôlés.
+cEbEcritureJson est une Classe
+PRIVÉ
+	tabLignes   est un tableau de chaînes
+	tabEcrit    est un tableau de booléens
+	nProfondeur est un entier              = 1
+
+	// Vingt niveaux suffisent à un document OpenAPI : un indicateur par niveau (« un élément est-il déjà écrit à ce niveau ? »), posé à Faux à l'ouverture.
+	PROCEDURE Constructeur()
+		POUR i = 1 À 20
+			TableauAjoute(:tabEcrit, Faux)
+		FIN
+	FIN
+
+	// Écrit une ligne au niveau courant : « "cle": valeur » (ou « valeur » sans clé), après avoir posé la virgule sur la ligne précédente du même niveau.
+	PROCEDURE PRIVÉE Ajoute(sCle est une chaîne, sValeur est une chaîne)
+		SI :tabEcrit[:nProfondeur] ALORS
+			nDerniere est un entier  = :tabLignes..Occurrence
+			sDerniere est une chaîne = :tabLignes[nDerniere]
+			:tabLignes[nDerniere] = sDerniere + ","
+		FIN
+		:tabEcrit[:nProfondeur] = Vrai
+		sLigne est une chaîne = ""
+		POUR i = 2 À :nProfondeur
+			sLigne += Caract(9)
+		FIN
+		SI sCle <> "" ALORS
+			sLigne += EbJsonChaine(sCle) + ": "
+		FIN
+		TableauAjoute(:tabLignes, sLigne + sValeur)
+	FIN
+
+	// Ouvre un objet (« { ») ou un tableau (« [ ») : ce qui s'écrit ensuite est à l'intérieur, jusqu'à FermeObjet ou FermeTableau.
+	PROCEDURE PRIVÉE Ouvre(sCle est une chaîne, sOuvrant est une chaîne)
+		:Ajoute(sCle, sOuvrant)
+		:nProfondeur = :nProfondeur + 1
+		:tabEcrit[:nProfondeur] = Faux
+	FIN
+
+	PROCEDURE PRIVÉE Ferme(sFermant est une chaîne)
+		// Rien n'a été écrit à ce niveau : l'objet ou le tableau vide tient sur la ligne de son ouverture (« [] »).
+		SI PAS :tabEcrit[:nProfondeur] ALORS
+			nDerniere est un entier = :tabLignes..Occurrence
+			:tabLignes[nDerniere] = :tabLignes[nDerniere] + sFermant
+			:nProfondeur = :nProfondeur - 1
+			RENVOYER
+		FIN
+		:nProfondeur = :nProfondeur - 1
+		sLigne est une chaîne = ""
+		POUR i = 2 À :nProfondeur
+			sLigne += Caract(9)
+		FIN
+		TableauAjoute(:tabLignes, sLigne + sFermant)
+	FIN
+
+	PROCEDURE PUBLIQUE OuvreObjet(sCle est une chaîne)
+		:Ouvre(sCle, "{")
+	FIN
+
+	PROCEDURE PUBLIQUE FermeObjet()
+		:Ferme("}")
+	FIN
+
+	PROCEDURE PUBLIQUE OuvreTableau(sCle est une chaîne)
+		:Ouvre(sCle, "[")
+	FIN
+
+	PROCEDURE PUBLIQUE FermeTableau()
+		:Ferme("]")
+	FIN
+
+	PROCEDURE PUBLIQUE EcritTexte(sCle est une chaîne, sValeur est une chaîne)
+		:Ajoute(sCle, EbJsonChaine(sValeur))
+	FIN
+
+	PROCEDURE PUBLIQUE EcritBooleen(sCle est une chaîne, bValeur est un booléen)
+		SI bValeur ALORS
+			:Ajoute(sCle, "true")
+		SINON
+			:Ajoute(sCle, "false")
+		FIN
+	FIN
+
+	// Une valeur déjà écrite en JSON (un nombre, « true », « null »…), posée telle quelle.
+	PROCEDURE PUBLIQUE EcritBrut(sCle est une chaîne, sJson est une chaîne)
+		:Ajoute(sCle, sJson)
+	FIN
+
+	// Le document : une ligne par valeur, séparées par des sauts de ligne, avec un saut de ligne final.
+	PROCEDURE PUBLIQUE Document() : chaîne
+		sDocument est une chaîne = ""
+		POUR TOUT sLigne DE :tabLignes
+			sDocument += sLigne + Caract(10)
+		FIN
+		RENVOYER sDocument
+	FIN
+FIN

@@ -1,0 +1,193 @@
+// Le seeder d'une ressource (« ebony make seeder <Nom> ») : de quoi remplir la base de développement avec des lignes d'exemple, par la fabrique de la ressource. Trois fichiers, écrits une fois, jamais remplacés.
+//   database/seeders/<dossier>/cSeeder<Nom>.owl        la classe : Remplit(n) ajoute n lignes si la table est vide (relancer ne double rien) ; se teste sur le repository en mémoire
+//   tests/unitaires/<dossier>/test_cSeeder<Nom>.owl    son test
+//   database/seeders/DatabaseSeeder.owl                le lanceur du projet : « owl database/seeders/DatabaseSeeder.owl --seed » démarre l'application sans HTTP, refuse la production (APP_ENV) et appelle les seeders
+EbContenuSeeder est une CollectionDeProcédures
+
+	// Le lanceur du projet : un seul par projet, partagé par tous les seeders.
+	PROCEDURE EbCheminLanceurSeeder() : chaîne
+		RENVOYER "database/seeders/DatabaseSeeder.owl"
+	FIN
+
+	PROCEDURE EbCheminSeeder(oDemande est un cEbDemandeMake) : chaîne
+		RENVOYER "database/seeders/" + oDemande.Dossier() + "/cSeeder" + oDemande.Pascal() + ".owl"
+	FIN
+
+	PROCEDURE EbCheminTestSeeder(oDemande est un cEbDemandeMake) : chaîne
+		RENVOYER "tests/unitaires/" + oDemande.Dossier() + "/test_cSeeder" + oDemande.Pascal() + ".owl"
+	FIN
+
+	// Les fichiers écrits, dans l'ordre : la classe, son test, le lanceur du projet.
+	PROCEDURE EbFichiersSeeder(oDemande est un cEbDemandeMake) : tableau de chaînes
+		tabFichiers est un tableau de chaînes
+		TableauAjoute(tabFichiers, EbCheminSeeder(oDemande))
+		TableauAjoute(tabFichiers, EbCheminTestSeeder(oDemande))
+		TableauAjoute(tabFichiers, EbCheminLanceurSeeder())
+		RENVOYER tabFichiers
+	FIN
+
+	// Le nom de la procédure du registre des composants du projet (« AppBoutiqueComposantsDeclares », ou « AppBoutiqueFabriques » pour un projet de la 0.1.5 ou avant), lu dans app/Composants.owl, ou « » si le texte n'en a pas.
+	// Le lanceur démarre l'application comme le fait le service : il lui ajoute les composants de ce registre.
+	PROCEDURE EbNomRegistreDuProjet(sComposants est une chaîne) : chaîne
+		sSuffixe est une chaîne = "ComposantsDeclares"
+		nFin     est un entier  = Position(sComposants, sSuffixe + "() : tableau")
+		SI nFin = 0 ALORS
+			sSuffixe = "Fabriques"
+			nFin     = Position(sComposants, sSuffixe + "() : tableau")
+		FIN
+		SI nFin = 0 ALORS
+			RENVOYER ""
+		FIN
+		nDebut est un entier = nFin
+		TANTQUE nDebut > 1 ET Milieu(sComposants, nDebut - 1, 1) <> " "
+			nDebut--
+		FIN
+		RENVOYER Milieu(sComposants, nDebut, nFin - nDebut) + sSuffixe
+	FIN
+
+	// Le bloc d'un seeder dans le lanceur : à ajouter, tel quel, avant l'arrêt de l'application. Indenté d'un cran (il est dans le SI du lanceur).
+	// sGenerateur : l'expression qui construit le générateur de valeurs (« cEbGenerateurCompteur() », ou celui qu'un module du projet déclare : EbGenerateurDuManifeste).
+	PROCEDURE EbLignesBlocSeeder(oDemande est un cEbDemandeMake, sGenerateur est une chaîne) : tableau de chaînes
+		sPascal   est une chaîne            = oDemande.Pascal()
+		tabLignes est un tableau de chaînes
+		TableauAjoute(tabLignes, "oSeedRepo" + sPascal + " est un cRepo" + sPascal + "Sql(cEbServiceBase.Base())")
+		TableauAjoute(tabLignes, "oSeedFabrique" + sPascal + " est une cFabrique" + sPascal + "(" + sGenerateur + ")")
+		TableauAjoute(tabLignes, "oSeed" + sPascal + " est un cSeeder" + sPascal + "(oSeedRepo" + sPascal + ", oSeedFabrique" + sPascal + ")")
+		TableauAjoute(tabLignes, "Trace(" + EbGuillemets(EbNomAffiche(oDemande) + " : ") + " + oSeed" + sPascal + ".Remplit(10) + " + EbGuillemets(" ligne(s) ajoutée(s)") + ")")
+		RENVOYER tabLignes
+	FIN
+
+	// La classe du seeder.
+	PROCEDURE EbContenuClasseSeeder(oDemande est un cEbDemandeMake) : chaîne
+		sPascal est une chaîne      = oDemande.Pascal()
+		oTexte  est un cEbTexteCode
+		oTexte.Ligne(0, "// Remplit(n) ne fait rien si la table contient déjà des lignes (un seeder relancé ne double pas les données) et rend le nombre de lignes ajoutées. Il passe par le repository : en mémoire dans le test, SQL dans le lanceur.")
+		oTexte.Ligne(0, "cSeeder" + sPascal + " est une Classe")
+		oTexte.Ligne(0, "PRIVÉ")
+		oTexte.Ligne(1, "oRepository est un iRepo" + sPascal)
+		oTexte.Ligne(1, "oFabrique   est une cFabrique" + sPascal)
+		oTexte.LigneVide()
+		oTexte.Ligne(1, "PROCEDURE Constructeur(repository est un iRepo" + sPascal + ", fabrique est une cFabrique" + sPascal + ")")
+		oTexte.Ligne(2, ":oRepository = repository")
+		oTexte.Ligne(2, ":oFabrique = fabrique")
+		oTexte.Ligne(1, "FIN")
+		oTexte.LigneVide()
+		oTexte.Ligne(1, "PROCEDURE PUBLIQUE Remplit(nNombre est un entier) : entier")
+		oTexte.Ligne(2, "SI :oRepository.Enumere()..Occurrence > 0 ALORS")
+		oTexte.Ligne(3, "RENVOYER 0")
+		oTexte.Ligne(2, "FIN")
+		oTexte.Ligne(2, "POUR i = 1 À nNombre")
+		oTexte.Ligne(3, ":oFabrique.Persiste(:oRepository)")
+		oTexte.Ligne(2, "FIN")
+		oTexte.Ligne(2, "RENVOYER nNombre")
+		oTexte.Ligne(1, "FIN")
+		oTexte.Ligne(0, "FIN")
+		RENVOYER oTexte.Texte()
+	FIN
+
+	// Le test du seeder, sur le repository en mémoire.
+	PROCEDURE EbContenuTestSeeder(oDemande est un cEbDemandeMake) : chaîne
+		sPascal est une chaîne      = oDemande.Pascal()
+		oTexte  est un cEbTexteCode
+		oTexte.Ligne(0, "// Tests du seeder de la ressource « " + EbNomAffiche(oDemande) + " » sur le repository en mémoire (le SQL est celui du lanceur : « owl database/seeders/DatabaseSeeder.owl --seed »).")
+		oTexte.LigneVide()
+		oTexte.Ligne(0, "// Sur une table vide, le seeder ajoute le nombre de lignes demandé et rend ce nombre.")
+		oTexte.Ligne(0, "PROCEDURE scenario_seeder_remplit_une_table_vide()")
+		oTexte.Ligne(1, "oRepository est un cRepo" + sPascal + "Memoire")
+		oTexte.Ligne(1, "oSeeder     est un cSeeder" + sPascal + "(oRepository, cFabrique" + sPascal + "(cEbGenerateurCompteur()))")
+		oTexte.Ligne(1, "dbgVérifieEgalité(oSeeder.Remplit(3), 3, " + EbGuillemets("trois lignes ajoutées") + ")")
+		oTexte.Ligne(1, "dbgVérifieEgalité(oRepository.Enumere()..Occurrence, 3, " + EbGuillemets("trois lignes dans le repository") + ")")
+		oTexte.Ligne(0, "FIN")
+		oTexte.LigneVide()
+		oTexte.Ligne(0, "// Relancé, il ne fait rien : la table n'est pas vide, rien n'est doublé.")
+		oTexte.Ligne(0, "PROCEDURE scenario_seeder_relance_ne_double_rien()")
+		oTexte.Ligne(1, "oRepository est un cRepo" + sPascal + "Memoire")
+		oTexte.Ligne(1, "oSeeder     est un cSeeder" + sPascal + "(oRepository, cFabrique" + sPascal + "(cEbGenerateurCompteur()))")
+		oTexte.Ligne(1, "oSeeder.Remplit(2)")
+		oTexte.Ligne(1, "dbgVérifieEgalité(oSeeder.Remplit(2), 0, " + EbGuillemets("aucune ligne ajoutée la seconde fois") + ")")
+		oTexte.Ligne(1, "dbgVérifieEgalité(oRepository.Enumere()..Occurrence, 2, " + EbGuillemets("toujours deux lignes") + ")")
+		oTexte.Ligne(0, "FIN")
+		oTexte.LigneVide()
+		oTexte.Ligne(0, "// Une table qui a déjà une ligne (celle de l'utilisateur) n'est pas touchée.")
+		oTexte.Ligne(0, "PROCEDURE scenario_seeder_respecte_les_lignes_existantes()")
+		oTexte.Ligne(1, "oRepository est un cRepo" + sPascal + "Memoire")
+		oTexte.Ligne(1, "oFabrique   est une cFabrique" + sPascal + "(cEbGenerateurCompteur())")
+		oTexte.Ligne(1, "oFabrique.Persiste(oRepository)")
+		oTexte.Ligne(1, "oSeeder     est un cSeeder" + sPascal + "(oRepository, oFabrique)")
+		oTexte.Ligne(1, "dbgVérifieEgalité(oSeeder.Remplit(5), 0, " + EbGuillemets("la table n'est pas vide : rien n'est ajouté") + ")")
+		oTexte.Ligne(1, "dbgVérifieEgalité(oRepository.Enumere()..Occurrence, 1, " + EbGuillemets("la ligne existante reste seule") + ")")
+		oTexte.Ligne(0, "FIN")
+		RENVOYER oTexte.Texte()
+	FIN
+
+	// Le lanceur du projet (écrit avec le premier seeder, jamais remplacé : les suivants s'y ajoutent à la main, une note dit quelles lignes).
+	// sRegistre : la procédure du registre des composants du projet (EbNomRegistreDuProjet). Tout est dans un SI : le code du sommet d'un fichier ne s'exécute pas sous « owl serve » ni « owl test », seulement quand on lance ce fichier avec --seed.
+	// sGenerateur : voir EbLignesBlocSeeder.
+	PROCEDURE EbContenuLanceurSeeder(oDemande est un cEbDemandeMake, sRegistre est une chaîne, sGenerateur est une chaîne) : chaîne
+		oTexte est un cEbTexteCode
+		oTexte.Ligne(0, "// Lanceur des seeders : « owl database/seeders/DatabaseSeeder.owl --seed », depuis le dossier du projet. Ajoutez-y un bloc par seeder (« ebony make seeder <Ressource> » dit lesquelles).")
+		oTexte.Ligne(0, "// Il refuse de tourner sauf APP_ENV=developpement ou test (exception 7012).")
+		oTexte.Ligne(0, "SI LigneCommande(1) = " + EbGuillemets("--seed") + " ALORS")
+		oTexte.Ligne(1, "oSeedLecture est un cEbLectureEnvReelle")
+		oTexte.Ligne(1, "oSeedSortie  est un cEbSortieJournalConsole")
+		oTexte.Ligne(1, "oSeedHorloge est un cEbHorlogeSysteme")
+		oTexte.Ligne(1, "oSeedApp     est un cEbApplication(oSeedLecture, oSeedSortie, oSeedHorloge)")
+		oTexte.Ligne(1, "POUR TOUT oSeedComposant DE " + sRegistre + "()")
+		oTexte.Ligne(2, "oSeedApp.Ajoute(oSeedComposant)")
+		oTexte.Ligne(1, "FIN")
+		oTexte.Ligne(1, "cEbServiceApplication.Definit(oSeedApp)")
+		oTexte.Ligne(1, "cEbServiceApplication.Application().Démarre()")
+		oTexte.Ligne(1, "EbSeedExigeDeveloppement(oSeedApp.Env().LitTexte(" + EbGuillemets("APP_ENV") + "))")
+		POUR TOUT sLigne DE EbLignesBlocSeeder(oDemande, sGenerateur)
+			oTexte.Ligne(1, sLigne)
+		FIN
+		oTexte.Ligne(1, "cEbServiceApplication.Arrête()")
+		oTexte.Ligne(0, "FIN")
+		RENVOYER oTexte.Texte()
+	FIN
+
+	// Les notes de « make seeder » : où est le seeder, comment le lancer, ce qui manque au projet, un fichier conservé par note.
+	// bSchemaPresent / sSchemaEnv : config/env.json du projet (un projet créé avant APP_ENV ne l'a pas : le lanceur refuserait). bCopieAncienne : la copie d'ebony/ n'a pas le garde (EbSeed.owl).
+	// sGenerateur : le générateur écrit dans le lanceur ; autre que le compteur, il vient d'un module du projet (une note le dit).
+	PROCEDURE EbNotesSeeder(oDemande est un cEbDemandeMake, tabCrees est un tableau de chaînes, tabConserves est un tableau de chaînes, sSchemaEnv est une chaîne, bSchemaPresent est un booléen, bCopieAncienne est un booléen, sGenerateur est une chaîne) : tableau de chaînes
+		tabNotes est un tableau de chaînes
+		TableauAjoute(tabNotes, "Le seeder est dans " + EbCheminSeeder(oDemande) + " : Remplit(n) ajoute n lignes d'exemple (par la fabrique) si la table est vide ; relancé, il ne double rien. Son test est " + EbCheminTestSeeder(oDemande) + ".")
+		SI TableauCherche(tabCrees, EbCheminLanceurSeeder()) > 0 ALORS
+			TableauAjoute(tabNotes, "Le lanceur " + EbCheminLanceurSeeder() + " démarre l'application sans HTTP et appelle ce seeder (10 lignes : changez le nombre dans le fichier). Appliquez d'abord les migrations (« ebony migrate »), puis, depuis le dossier du projet : owl database/seeders/DatabaseSeeder.owl --seed")
+		SINON
+			sLignes est une chaîne = ""
+			POUR TOUT sLigne DE EbLignesBlocSeeder(oDemande, sGenerateur)
+				sLignes += EbSeparateur(sLignes) + sLigne
+			FIN
+			TableauAjoute(tabNotes, "Le lanceur " + EbCheminLanceurSeeder() + " existe déjà : il n'est pas modifié. Ajoutez-y, dans son bloc SI et avant « cEbServiceApplication.Arrête() », les lignes qui appellent ce seeder (une par ligne) : " + sLignes)
+		FIN
+		SI sGenerateur <> EbGenerateurParDefaut() ALORS
+			TableauAjoute(tabNotes, "Le générateur de valeurs du seeder est " + sGenerateur + " : un module du projet le déclare dans son manifeste (ebony/modules/*.json, membre generateur). Pour le compteur (« <colonne> <n> »), écrivez " + EbGenerateurParDefaut() + " dans le lanceur.")
+		FIN
+		TableauAjoute(tabNotes, "Le lanceur refuse de tourner sauf APP_ENV=developpement ou APP_ENV=test (exception 7012) : une base de production n'est jamais remplie par erreur.")
+		SI bSchemaPresent ET Position(sSchemaEnv, "APP_ENV") = 0 ALORS
+			TableauAjoute(tabNotes, "config/env.json n'a pas la variable APP_ENV (projet créé avant elle) : ajoutez-y { cle: APP_ENV, type: liste, valeurs: [developpement, test, production], defaut: developpement } (JSON : voir un projet neuf), sinon le lanceur refuse.")
+		FIN
+		SI bCopieAncienne ALORS
+			TableauAjoute(tabNotes, "La copie d'ebony/ de ce projet est plus ancienne que ce seeder (ebony/fabriques/EbSeed.owl est absent) : il ne compilera pas. Supprimez le dossier ebony/ à la main, puis lancez « ebony restore ».")
+		FIN
+		POUR TOUT sConserve DE tabConserves
+			SI sConserve <> EbCheminLanceurSeeder() ALORS
+				TableauAjoute(tabNotes, sConserve + " existe déjà : conservé, non modifié.")
+			FIN
+		FIN
+		RENVOYER tabNotes
+	FIN
+
+	// Le contenu du fichier de rang nRang (voir EbFichiersSeeder).
+	PROCEDURE EbContenuFichierSeeder(oDemande est un cEbDemandeMake, sRegistre est une chaîne, sGenerateur est une chaîne, nRang est un entier) : chaîne
+		SELON nRang
+			CAS 1
+			RENVOYER EbContenuClasseSeeder(oDemande)
+			CAS 2
+			RENVOYER EbContenuTestSeeder(oDemande)
+			AUTRE CAS
+			RENVOYER EbContenuLanceurSeeder(oDemande, sRegistre, sGenerateur)
+		FIN
+	FIN
+FIN

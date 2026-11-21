@@ -1,0 +1,50 @@
+// Tests de cEbEcritureJson (l'écrivain de JSON indenté de « ebony openapi ») : virgules, indentation, vides, échappement, et que le résultat est du JSON valide.
+
+// Un objet avec un texte, un entier, un booléen, un nombre brut et un tableau : virgules entre les éléments, jamais après le dernier.
+PROCEDURE scenario_ecriture_json_virgules_et_indentation()
+	oE est un cEbEcritureJson
+	oE.OuvreObjet("")
+	oE.EcritTexte("a", "x")
+	oE.EcritBooleen("c", Vrai)
+	oE.EcritBrut("d", "1.5")
+	oE.OuvreTableau("e")
+	oE.EcritTexte("", "un")
+	oE.EcritTexte("", "deux")
+	oE.FermeTableau()
+	oE.FermeObjet()
+	sT       est une chaîne = Caract(9)
+	sL       est une chaîne = Caract(10)
+	sAttendu est une chaîne = "{" + sL + sT + `"a": "x",` + sL + sT + `"c": true,` + sL + sT + `"d": 1.5,` + sL + sT + `"e": [` + sL + sT + sT + `"un",` + sL + sT + sT + `"deux"` + sL + sT + "]" + sL + "}" + sL
+	dbgVérifieEgalité(oE.Document(), sAttendu, "le document, ligne à ligne")
+	dbgVérifieVrai(JSONValide(oE.Document()), "du JSON valide")
+FIN
+
+// Un objet ou un tableau sans rien dedans tient sur une ligne, et la virgule qui suit est bien posée.
+PROCEDURE scenario_ecriture_json_vides_sur_une_ligne()
+	oE est un cEbEcritureJson
+	oE.OuvreObjet("")
+	oE.OuvreTableau("vide")
+	oE.FermeTableau()
+	oE.OuvreObjet("aussi")
+	oE.FermeObjet()
+	oE.EcritTexte("fin", "ok")
+	oE.FermeObjet()
+	sT       est une chaîne = Caract(9)
+	sL       est une chaîne = Caract(10)
+	sAttendu est une chaîne = "{" + sL + sT + `"vide": [],` + sL + sT + `"aussi": {},` + sL + sT + `"fin": "ok"` + sL + "}" + sL
+	dbgVérifieEgalité(oE.Document(), sAttendu, "vides sur une ligne")
+	dbgVérifieVrai(JSONValide(oE.Document()), "du JSON valide")
+FIN
+
+// Un guillemet, une barre oblique inverse et un saut de ligne dans un texte sont échappés : le document reste valide et le texte se relit à l'identique.
+PROCEDURE scenario_ecriture_json_echappe_les_textes()
+	oE     est un cEbEcritureJson
+	sTexte est une chaîne         = "dit " + Caract(34) + "oui" + Caract(34) + " \ puis" + Caract(10) + "fin"
+	oE.OuvreObjet("")
+	oE.EcritTexte("m", sTexte)
+	oE.FermeObjet()
+	dbgVérifieVrai(JSONValide(oE.Document()), "du JSON valide")
+	jDoc  est un JSON    = ChaîneVersJSON(oE.Document())
+	sRelu est une chaîne = jDoc["m"]
+	dbgVérifieEgalité(sRelu, sTexte, "le texte se relit à l'identique")
+FIN

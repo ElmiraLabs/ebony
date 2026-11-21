@@ -1,0 +1,245 @@
+// Tests de cEbGenerationOpenapi (« ebony openapi ») avec un faux disque : le document d'un projet protégé et d'un projet ouvert, les règles et les défauts de ressource.json, et chaque refus avec son code.
+
+// Un projet ebony dans C:\Projets\Mon App (kit api : burin et auth), avec le manifeste d'auth si bAuth.
+PROCEDURE EbTestDisqueOpenapi(bAuth est un booléen) : cEbSystemeFichiersFictif
+	oDisque est un cEbSystemeFichiersFictif("C:\Projets\Mon App")
+	oDisque.AjouteDossier("C:\Projets")
+	oDisque.AjouteDossier("C:\Projets\Mon App")
+	oOptions est un cEbOptionsProjet("api", "sqlite", Faux, "")
+	oDisque.AjouteFichier("C:\Projets\Mon App\ebony.conf", EbContenuConfAvecOptions("Mon App", "mon-app", "AppMonApp", "0.1.0", oOptions))
+	SI bAuth ALORS
+		oDisque.AjouteDossier("C:\Projets\Mon App\ebony")
+		oDisque.AjouteDossier("C:\Projets\Mon App\ebony\modules")
+		oDisque.AjouteFichier("C:\Projets\Mon App\ebony\modules\auth.json", `{ "nom": "auth", "routes": { "proprietes": [ "Authentification = httpAuthBearer" ], "procedures": [ "PROCEDURE surAuthentification(sJeton est une chaîne) : booléen", "\tRENVOYER Vrai", "FIN" ] } }`)
+	FIN
+	RENVOYER oDisque
+FIN
+
+// Ajoute la description d'une ressource dans app/domaine/<dossier>/ressource.json.
+PROCEDURE EbTestAjouteRessourceOpenapi(oDisque est un cEbSystemeFichiersFictif, sDossier est une chaîne, sTexte est une chaîne)
+	oDisque.AjouteDossier("C:\Projets\Mon App\app")
+	oDisque.AjouteDossier("C:\Projets\Mon App\app\domaine")
+	oDisque.AjouteDossier("C:\Projets\Mon App\app\domaine\" + sDossier)
+	oDisque.AjouteFichier("C:\Projets\Mon App\app\domaine\" + sDossier + "\ressource.json", sTexte)
+FIN
+
+// Une ressource « Client » riche : clé générée, texte avec règles, entier avec bornes et défaut, réel, NULL permis, référence, date.
+PROCEDURE EbTestTexteClientOpenapi() : chaîne
+	RENVOYER `{ "ressource": "Client", "table": "clients", "champs": [ { "nom": "id", "type": "entier", "cle": true }, { "nom": "nom", "type": "texte", "regles": { "longueurMin": 2, "longueurMax": 40, "motif": "^[A-Z]" } }, { "nom": "statut", "type": "texte", "defaut": "actif", "regles": { "valeurs": [ "actif", "inactif" ] } }, { "nom": "age", "type": "entier", "nullable": true, "regles": { "min": 0, "max": 150 } }, { "nom": "solde", "type": "reel", "defaut": 0.5 }, { "nom": "pays_id", "type": "entier", "reference": { "table": "pays", "colonne": "id" } }, { "nom": "cree", "type": "date" } ] }`
+FIN
+
+// Lance la génération et rend « code|message » si elle lève, ou « » si elle réussit.
+PROCEDURE EbTestEchecOpenapi(oDisque est un cEbSystemeFichiersFictif) : chaîne
+	sRes        est une chaîne                       = ""
+	oGeneration est un cEbGenerationOpenapi(oDisque)
+	QUAND EXCEPTION DANS
+		sDocument est une chaîne = oGeneration.Execute()
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Le document du projet, lu en JSON.
+PROCEDURE EbTestDocumentOpenapi(oDisque est un cEbSystemeFichiersFictif) : JSON
+	oGeneration est un cEbGenerationOpenapi(oDisque)
+	sDocument   est une chaîne                       = oGeneration.Execute()
+	jDocument   est un JSON                          = ChaîneVersJSON(sDocument)
+	RENVOYER jDocument
+FIN
+
+// Le document est du JSON valide OpenAPI 3.0.3 : titre du projet, serveur par défaut, route de santé et les deux chemins de la ressource.
+PROCEDURE scenario_document_de_base()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Vrai)
+	EbTestAjouteRessourceOpenapi(oDisque, "client", EbTestTexteClientOpenapi())
+	oGeneration est un cEbGenerationOpenapi(oDisque)
+	sDocument   est une chaîne                       = oGeneration.Execute()
+	dbgVérifieVrai(JSONValide(sDocument), "du JSON valide")
+	jD       est un JSON    = ChaîneVersJSON(sDocument)
+	sVersion est une chaîne = jD["openapi"]
+	dbgVérifieEgalité(sVersion, "3.0.3", "version d'OpenAPI")
+	sTitre est une chaîne = jD["info"]["title"]
+	dbgVérifieEgalité(sTitre, "Mon App", "le titre est le nom du projet")
+	sLicence est une chaîne = jD["info"]["license"]["name"]
+	dbgVérifieEgalité(sLicence, "MIT", "la licence du document")
+	dbgVérifieVrai(JSONExiste(jD["paths"], "/api/health"), "la route de santé")
+	dbgVérifieVrai(JSONExiste(jD["paths"], "/api/clients"), "la collection")
+	dbgVérifieVrai(JSONExiste(jD["paths"]["/api/clients"], "get"), "liste")
+	dbgVérifieVrai(JSONExiste(jD["paths"]["/api/clients"], "post"), "création")
+	dbgVérifieVrai(JSONExiste(jD["paths"], "/api/clients/{cle}"), "l'élément")
+	dbgVérifieVrai(JSONExiste(jD["paths"]["/api/clients/{cle}"], "get"), "lecture")
+	dbgVérifieVrai(JSONExiste(jD["paths"]["/api/clients/{cle}"], "put"), "remplacement")
+	dbgVérifieVrai(JSONExiste(jD["paths"]["/api/clients/{cle}"], "patch"), "modification partielle")
+	dbgVérifieVrai(JSONExiste(jD["paths"]["/api/clients/{cle}"], "delete"), "suppression")
+	sOperation est une chaîne = jD["paths"]["/api/clients/{cle}"]["patch"]["operationId"]
+	dbgVérifieEgalité(sOperation, "CorrigeClient", "identifiant d'opération")
+FIN
+
+// Le manifeste d'auth déclare httpAuthBearer : un schéma « bearerAuth » est exigé partout, sauf la santé, et chaque opération de ressource annonce 401.
+PROCEDURE scenario_routes_protegees_quand_un_module_fournit_un_jeton()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Vrai)
+	EbTestAjouteRessourceOpenapi(oDisque, "client", EbTestTexteClientOpenapi())
+	jD est un JSON = EbTestDocumentOpenapi(oDisque)
+	dbgVérifieVrai(JSONExiste(jD, "security"), "exigence globale")
+	dbgVérifieVrai(JSONExiste(jD["components"], "securitySchemes"), "schéma de sécurité")
+	sSchema est une chaîne = jD["components"]["securitySchemes"]["bearerAuth"]["scheme"]
+	dbgVérifieEgalité(sSchema, "bearer", "jeton Bearer")
+	dbgVérifieVrai(JSONExiste(jD["paths"]["/api/clients"]["get"]["responses"], "401"), "la liste annonce 401")
+	dbgVérifieVrai(JSONExiste(jD["paths"]["/api/clients/{cle}"]["delete"]["responses"], "401"), "la suppression annonce 401")
+	dbgVérifieFaux(JSONExiste(jD["paths"]["/api/health"]["get"]["responses"], "401"), "la santé reste ouverte")
+	dbgVérifieVrai(JSONExiste(jD["components"]["responses"], "NonAutorise"), "la réponse 401 est définie")
+FIN
+
+// Sans module qui fournisse un jeton, rien ne parle de sécurité : routes ouvertes, ni 401 ni schéma.
+PROCEDURE scenario_routes_ouvertes_sans_garde()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Faux)
+	EbTestAjouteRessourceOpenapi(oDisque, "client", EbTestTexteClientOpenapi())
+	jD est un JSON = EbTestDocumentOpenapi(oDisque)
+	dbgVérifieFaux(JSONExiste(jD, "security"), "pas d'exigence globale")
+	dbgVérifieFaux(JSONExiste(jD["components"], "securitySchemes"), "pas de schéma de sécurité")
+	dbgVérifieFaux(JSONExiste(jD["paths"]["/api/clients"]["get"]["responses"], "401"), "pas de 401")
+	dbgVérifieFaux(JSONExiste(jD["components"]["responses"], "NonAutorise"), "pas de réponse 401")
+FIN
+
+// Les schémas d'une ressource : la lecture (tous les champs), le corps d'écriture (sans la clé générée) et le corps partiel (rien d'obligatoire).
+PROCEDURE scenario_schemas_de_la_ressource()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Vrai)
+	EbTestAjouteRessourceOpenapi(oDisque, "client", EbTestTexteClientOpenapi())
+	jD       est un JSON = EbTestDocumentOpenapi(oDisque)
+	jSchemas est un JSON = jD["components"]["schemas"]
+	dbgVérifieVrai(JSONExiste(jSchemas, "Client"), "schéma de lecture")
+	dbgVérifieVrai(JSONExiste(jSchemas, "ClientCorps"), "schéma d'écriture")
+	dbgVérifieVrai(JSONExiste(jSchemas, "ClientPartiel"), "schéma partiel")
+	dbgVérifieVrai(JSONExiste(jSchemas, "Erreur"), "schéma d'erreur")
+	dbgVérifieVrai(JSONExiste(jSchemas, "PageMeta"), "schéma de la pagination")
+	dbgVérifieVrai(JSONExiste(jSchemas["Client"]["properties"], "id"), "la lecture porte la clé")
+	dbgVérifieFaux(JSONExiste(jSchemas["ClientCorps"]["properties"], "id"), "l'écriture ne porte pas la clé générée")
+	dbgVérifieFaux(JSONExiste(jSchemas["ClientPartiel"], "required"), "le corps partiel n'exige rien")
+	bLecture est un booléen = jSchemas["Client"]["properties"]["id"]["readOnly"]
+	dbgVérifieVrai(bLecture, "la clé générée est en lecture seule")
+	sRequisEcriture est une chaîne = JSONVersChaîne(jSchemas["ClientCorps"]["required"], psdMinifie)
+	dbgVérifieEgalité(sRequisEcriture, `["nom","pays_id","cree"]`, "obligatoires à l'écriture : ni NULL ni défaut ni clé générée")
+	sRequisLecture est une chaîne = JSONVersChaîne(jSchemas["Client"]["required"], psdMinifie)
+	dbgVérifieEgalité(sRequisLecture, `["id","nom","statut","solde","pays_id","cree"]`, "obligatoires à la lecture : tout ce qui n'est pas NULL")
+FIN
+
+// Types, formats, NULL, référence, défauts et règles d'un champ sont écrits dans son schéma ; une règle qui ne s'exprime pas pour le type est omise.
+PROCEDURE scenario_champs_formats_regles_et_defauts()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Vrai)
+	EbTestAjouteRessourceOpenapi(oDisque, "client", EbTestTexteClientOpenapi())
+	jD       est un JSON    = EbTestDocumentOpenapi(oDisque)
+	jP       est un JSON    = jD["components"]["schemas"]["ClientCorps"]["properties"]
+	sTypeNom est une chaîne = jP["nom"]["type"]
+	dbgVérifieEgalité(sTypeNom, "string", "texte : string")
+	nMin est un entier = jP["nom"]["minLength"]
+	dbgVérifieEgalité(nMin, 2, "longueurMin devient minLength")
+	nMax est un entier = jP["nom"]["maxLength"]
+	dbgVérifieEgalité(nMax, 40, "longueurMax devient maxLength")
+	sMotif est une chaîne = jP["nom"]["pattern"]
+	dbgVérifieEgalité(sMotif, "^[A-Z]", "motif devient pattern")
+	sValeurs est une chaîne = JSONVersChaîne(jP["statut"]["enum"], psdMinifie)
+	dbgVérifieEgalité(sValeurs, `["actif","inactif"]`, "valeurs devient enum")
+	sDefaut est une chaîne = jP["statut"]["default"]
+	dbgVérifieEgalité(sDefaut, "actif", "le défaut texte")
+	bNullable est un booléen = jP["age"]["nullable"]
+	dbgVérifieVrai(bNullable, "NULL permis")
+	sTypeAge est une chaîne = jP["age"]["type"]
+	dbgVérifieEgalité(sTypeAge, "integer", "entier : integer")
+	sFormatAge est une chaîne = jP["age"]["format"]
+	dbgVérifieEgalité(sFormatAge, "int64", "entier : int64")
+	nBorneMin est un entier = jP["age"]["minimum"]
+	dbgVérifieEgalité(nBorneMin, 0, "min devient minimum")
+	nBorneMax est un entier = jP["age"]["maximum"]
+	dbgVérifieEgalité(nBorneMax, 150, "max devient maximum")
+	sTypeSolde est une chaîne = jP["solde"]["type"]
+	dbgVérifieEgalité(sTypeSolde, "number", "réel : number")
+	rDefautSolde est un réel = jP["solde"]["default"]
+	dbgVérifieEgalité(rDefautSolde, 0.5, "le défaut réel")
+	sRef est une chaîne = jP["pays_id"]["description"]
+	dbgVérifieVrai(Position(sRef, "pays.id") > 0, "la référence est dite")
+	sFormatDate est une chaîne = jP["cree"]["format"]
+	dbgVérifieEgalité(sFormatDate, "date", "date : format date")
+FIN
+
+// La liste annonce ses paramètres : page, limite, tri (les colonnes) et un filtre par colonne.
+PROCEDURE scenario_parametres_de_la_liste()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Vrai)
+	EbTestAjouteRessourceOpenapi(oDisque, "client", EbTestTexteClientOpenapi())
+	jD          est un JSON    = EbTestDocumentOpenapi(oDisque)
+	jParametres est un JSON    = jD["paths"]["/api/clients"]["get"]["parameters"]
+	sNoms       est une chaîne = ""
+	POUR TOUT jParametre DE jParametres
+		sNom est une chaîne = jParametre["name"]
+		sNoms += sNom + ","
+	FIN
+	dbgVérifieEgalité(sNoms, "page,limite,tri,ordre,filtre_id,filtre_nom,filtre_statut,filtre_age,filtre_solde,filtre_pays_id,filtre_cree,", "page, limite, tri, ordre, un filtre par colonne")
+	sTri est une chaîne = JSONVersChaîne(jParametres[3]["schema"]["enum"], psdMinifie)
+	dbgVérifieEgalité(sTri, `["id","nom","statut","age","solde","pays_id","cree"]`, "le tri porte sur les colonnes")
+FIN
+
+// Plusieurs ressources : un jeu de chemins et de schémas chacune, par ordre de dossier.
+PROCEDURE scenario_plusieurs_ressources()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Vrai)
+	EbTestAjouteRessourceOpenapi(oDisque, "client", EbTestTexteClientOpenapi())
+	EbTestAjouteRessourceOpenapi(oDisque, "pays", `{ "ressource": "Pays", "table": "pays", "champs": [ { "nom": "id", "type": "texte", "cle": true }, { "nom": "libelle", "type": "texte" } ] }`)
+	jD est un JSON = EbTestDocumentOpenapi(oDisque)
+	dbgVérifieVrai(JSONExiste(jD["paths"], "/api/clients"), "les clients")
+	dbgVérifieVrai(JSONExiste(jD["paths"], "/api/pays"), "les pays")
+	dbgVérifieVrai(JSONExiste(jD["components"]["schemas"], "Pays"), "le schéma des pays")
+	sTypeCle est une chaîne = jD["paths"]["/api/pays/{cle}"]["parameters"][1]["schema"]["type"]
+	dbgVérifieEgalité(sTypeCle, "string", "une clé texte : le paramètre d'adresse est une chaîne")
+	dbgVérifieFaux(JSONExiste(jD["components"]["schemas"]["Pays"]["properties"]["id"], "readOnly"), "une clé texte n'est pas générée")
+FIN
+
+// Un nom de table avec schéma (« crm.clients ») : le segment est la dernière partie, comme dans le contrôleur généré.
+PROCEDURE scenario_segment_d_une_table_avec_schema()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Vrai)
+	EbTestAjouteRessourceOpenapi(oDisque, "client", `{ "ressource": "Client", "table": "crm.Clients", "champs": [ { "nom": "id", "type": "entier", "cle": true }, { "nom": "nom", "type": "texte" } ] }`)
+	jD est un JSON = EbTestDocumentOpenapi(oDisque)
+	dbgVérifieVrai(JSONExiste(jD["paths"], "/api/clients"), "le segment est « clients »")
+FIN
+
+// Refus : pas un projet ebony (31), OWL dans un autre dossier (30), pas de module burin (53), aucune ressource (25), description incorrecte (25, avec le fichier).
+PROCEDURE scenario_refus_d_openapi()
+	oSansConf est un cEbSystemeFichiersFictif("C:\Projets\Vide")
+	oSansConf.AjouteDossier("C:\Projets\Vide")
+	dbgVérifieEgalité(Gauche(EbTestEchecOpenapi(oSansConf), 3), "31|", "pas de ebony.conf : 31")
+	oAilleurs est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Vrai)
+	oAilleurs.DefinitActif("C:\Projets\Autre")
+	dbgVérifieEgalité(Gauche(EbTestEchecOpenapi(oAilleurs), 3), "30|", "owl dans un autre dossier : 30")
+	oSlim est un cEbSystemeFichiersFictif("C:\Projets\Mon App")
+	oSlim.AjouteDossier("C:\Projets\Mon App")
+	oSlim.AjouteFichier("C:\Projets\Mon App\ebony.conf", EbContenuConfAvecOptions("Mon App", "mon-app", "AppMonApp", "0.1.0", cEbOptionsProjet("slim", "", Faux, "")))
+	dbgVérifieEgalité(Gauche(EbTestEchecOpenapi(oSlim), 3), "53|", "un projet slim n'a pas burin : 53")
+	oVide est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Vrai)
+	dbgVérifieEgalité(Gauche(EbTestEchecOpenapi(oVide), 3), "25|", "aucune ressource : 25")
+	oFaux est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Vrai)
+	EbTestAjouteRessourceOpenapi(oFaux, "client", "pas du json")
+	sRefus est une chaîne = EbTestEchecOpenapi(oFaux)
+	dbgVérifieEgalité(Gauche(sRefus, 3), "25|", "description incorrecte : 25")
+	dbgVérifieVrai(Position(sRefus, "app/domaine/client/ressource.json") > 0, "le message nomme le fichier")
+FIN
+
+// Un champ en camelCase (« userId », « thumbnailUrl ») : l'API expose le nom JSON en snake_case (« user_id ») dans le corps, la réponse, « tri » et les filtres ; le document doit dire CE nom-là et non celui de ressource.json
+// (observé sur un vrai service : le corps avec « userId » est refusé, 400 « Champ obligatoire absent : user_id »).
+PROCEDURE scenario_champs_camelcase_dits_en_snake_case()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueOpenapi(Vrai)
+	EbTestAjouteRessourceOpenapi(oDisque, "photo", `{ "ressource": "Photo", "table": "photos", "champs": [ { "nom": "id", "type": "entier", "cle": true }, { "nom": "albumId", "type": "entier", "reference": { "table": "albums", "colonne": "id" } }, { "nom": "thumbnailUrl", "type": "texte" } ] }`)
+	jD est un JSON = EbTestDocumentOpenapi(oDisque)
+	jP est un JSON = jD["components"]["schemas"]["PhotoCorps"]["properties"]
+	dbgVérifieVrai(JSONExiste(jP, "album_id"), "la propriété est album_id")
+	dbgVérifieVrai(JSONExiste(jP, "thumbnail_url"), "la propriété est thumbnail_url")
+	dbgVérifieFaux(JSONExiste(jP, "albumId"), "pas albumId")
+	dbgVérifieFaux(JSONExiste(jP, "thumbnailUrl"), "pas thumbnailUrl")
+	sRequis est une chaîne = JSONVersChaîne(jD["components"]["schemas"]["PhotoCorps"]["required"], psdMinifie)
+	dbgVérifieEgalité(sRequis, `["album_id","thumbnail_url"]`, "obligatoires : les noms JSON")
+	jParametres est un JSON    = jD["paths"]["/api/photos"]["get"]["parameters"]
+	sNoms       est une chaîne = ""
+	POUR TOUT jParametre DE jParametres
+		sNom est une chaîne = jParametre["name"]
+		sNoms += sNom + ","
+	FIN
+	dbgVérifieEgalité(sNoms, "page,limite,tri,ordre,filtre_id,filtre_album_id,filtre_thumbnail_url,", "les filtres portent les noms JSON")
+	sTri est une chaîne = JSONVersChaîne(jParametres[3]["schema"]["enum"], psdMinifie)
+	dbgVérifieEgalité(sTri, `["id","album_id","thumbnail_url"]`, "tri : les noms JSON")
+FIN

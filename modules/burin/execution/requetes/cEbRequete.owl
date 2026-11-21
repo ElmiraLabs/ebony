@@ -1,0 +1,45 @@
+// Une requête prête à partir : le texte SQL, avec ses paramètres « {p1} », « {p2} »…, et les valeurs qu'ils désignent. Jamais une valeur écrite dans le texte : c'est ce qui neutralise l'injection SQL.
+// L'objet se remplit pendant que cEbSql écrit son texte (Parametre, DefinitTexte), puis ne fait plus que se lire. Parametres() est ce que iEbConnexionSql.Envoie attend : Envoie(Texte(), Parametres()).
+cEbRequete est une Classe
+PRIVÉ
+	oDialecte  est un iEbDialecteSql
+	sTexte     est une chaîne            = ""
+	tabValeurs est un tableau
+	tabNoms    est un tableau de chaînes
+
+	PROCEDURE Constructeur(dialecte est un iEbDialecteSql)
+		:oDialecte = dialecte
+	FIN
+
+	// Réservé à cEbSql : enregistre une valeur et rend le paramètre qui la désigne dans le texte (« {p1} » pour la première, « {p2} » pour la suivante…).
+	PROCEDURE PUBLIQUE Parametre(valeur est un JSON) : chaîne
+		sNom est une chaîne = "p" + (:tabNoms..Occurrence + 1)
+		TableauAjoute(:tabNoms, sNom)
+		TableauAjoute(:tabValeurs, valeur)
+		RENVOYER :oDialecte.Parametre(sNom)
+	FIN
+
+	// Réservé à cEbSql : pose le texte une fois écrit.
+	PROCEDURE PUBLIQUE DefinitTexte(sValeur est une chaîne)
+		:sTexte = sValeur
+	FIN
+
+	// Le texte SQL, avec ses paramètres.
+	PROCEDURE PUBLIQUE Texte() : chaîne
+		RENVOYER :sTexte
+	FIN
+
+	// Le nombre de valeurs passées en paramètres.
+	PROCEDURE PUBLIQUE NbParametres() : entier
+		RENVOYER :tabNoms..Occurrence
+	FIN
+
+	// Les valeurs, par nom de paramètre (« p1 », « p2 »…), avec leur type d'origine : le tableau que iEbConnexionSql.Envoie attend.
+	PROCEDURE PUBLIQUE Parametres() : tableau associatif
+		tabParametres est un tableau associatif
+		POUR i = 1 À :tabNoms..Occurrence
+			tabParametres[:tabNoms[i]] = :tabValeurs[i]
+		FIN
+		RENVOYER tabParametres
+	FIN
+FIN

@@ -1,0 +1,174 @@
+// Tests de cEbSelect et de cEbBurin : le SELECT construit à la manière de Drizzle, par chaînage, et rendu par ToSQL() (texte et paramètres) sans aucune base.
+// Deux tables de test, produits et categories, ont chacune une colonne « nom » : chaque colonne sélectionnée a donc un alias unique.
+
+// Lance ToSQL() et rend « code|message » si il lève, ou « » s'il réussit.
+PROCEDURE EbTestRefusToSQL(oSelect est un cEbSelect) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oEssaiRequete est un cEbRequete = oSelect.ToSQL()
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Sans condition : toutes les colonnes de la table, chacune sous son alias « table__colonne », et aucun paramètre.
+PROCEDURE scenario_select_de_toute_la_table()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oRequete  est un cEbRequete = oBurin.Select().From(oProduits).ToSQL()
+	dbgVérifieEgalité(oRequete.Texte(), EbTestSelectProduits(), "SELECT de toute la table")
+	dbgVérifieEgalité(oRequete.NbParametres(), 0, "aucun paramètre")
+FIN
+
+// Une valeur de la condition devient un paramètre : le texte n'en contient que le nom, la valeur garde son type.
+PROCEDURE scenario_where_valeur_en_parametre()
+	oBurin    est un cEbBurin           = EbTestBurin()
+	oProduits est un cEbTable           = EbTestProduits()
+	oPrix     est un cEbColonne         = oProduits.ColonneNommee("prix")
+	oRequete  est un cEbRequete         = oBurin.Select().From(oProduits).Where(oPrix.Gt(10)).ToSQL()
+	tabP      est un tableau associatif = oRequete.Parametres()
+	dbgVérifieEgalité(oRequete.Texte(), EbTestSelectProduits() + ` WHERE "produits"."prix" > {p1}`, "le texte")
+	dbgVérifieEgalité(tabP["p1"], 10, "la valeur")
+	dbgVérifieEgalité(TypeVar(tabP["p1"]), owlEntier, "son type")
+FIN
+
+// Une tentative d'injection dans une valeur reste une valeur : le texte ne la contient pas, le paramètre la garde intacte.
+PROCEDURE scenario_injection_neutralisee()
+	oBurin    est un cEbBurin           = EbTestBurin()
+	oProduits est un cEbTable           = EbTestProduits()
+	oNom      est un cEbColonne         = oProduits.ColonneNommee("nom")
+	sPiege    est une chaîne            = `x'; DROP TABLE produits; --`
+	oRequete  est un cEbRequete         = oBurin.Select().From(oProduits).Where(oNom.Eq(sPiege)).ToSQL()
+	tabP      est un tableau associatif = oRequete.Parametres()
+	dbgVérifieEgalité(Position(oRequete.Texte(), "DROP"), 0, "rien de la valeur dans le texte")
+	dbgVérifieEgalité(tabP["p1"], sPiege, "la valeur est dans le paramètre, intacte")
+FIN
+
+// Where remplace ; AndWhere et OrWhere ajoutent, avec des parenthèses qui gardent l'ordre : (a ET b) OU c. La numérotation des paramètres suit l'ordre d'écriture.
+PROCEDURE scenario_and_where_or_where()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oPrix     est un cEbColonne = oProduits.ColonneNommee("prix")
+	oNom      est un cEbColonne = oProduits.ColonneNommee("nom")
+	oActif    est un cEbColonne = oProduits.ColonneNommee("actif")
+	oRequete  est un cEbRequete = oBurin.Select().From(oProduits).Where(oPrix.Gt(10)).AndWhere(oNom.Like("a%")).OrWhere(oActif.Eq(Vrai)).ToSQL()
+	dbgVérifieEgalité(oRequete.Texte(), EbTestSelectProduits() + ` WHERE (("produits"."prix" > {p1} AND "produits"."nom" LIKE {p2}) OR "produits"."actif" = {p3})`, "(a ET b) OU c")
+	dbgVérifieEgalité(oRequete.NbParametres(), 3, "trois valeurs")
+	oSeule est un cEbRequete = oBurin.Select().From(oProduits).AndWhere(oPrix.Gt(10)).ToSQL()
+	dbgVérifieEgalité(oSeule.Texte(), EbTestSelectProduits() + ` WHERE "produits"."prix" > {p1}`, "AndWhere sans condition précédente : c'est la condition")
+	oRemplace est un cEbRequete = oBurin.Select().From(oProduits).Where(oPrix.Gt(10)).Where(oPrix.Lt(99)).ToSQL()
+	dbgVérifieEgalité(oRemplace.Texte(), EbTestSelectProduits() + ` WHERE "produits"."prix" < {p1}`, "un second Where remplace le premier")
+FIN
+
+// AllOf et AnyOf prennent un tableau ; ils ignorent un tableau vide et les conditions vides (les filtres facultatifs), et Where ignore une condition vide.
+PROCEDURE scenario_allof_anyof_ignorent_les_vides()
+	oBurin       est un cEbBurin   = EbTestBurin()
+	oProduits    est un cEbTable   = EbTestProduits()
+	oPrix        est un cEbColonne = oProduits.ColonneNommee("prix")
+	oNom         est un cEbColonne = oProduits.ColonneNommee("nom")
+	tabAucune    est un tableau
+	oVide        est un cEbSql
+	oRequeteVide est un cEbRequete = oBurin.Select().From(oProduits).Where(oBurin.AllOf(tabAucune)).ToSQL()
+	dbgVérifieEgalité(oRequeteVide.Texte(), EbTestSelectProduits(), "AllOf d'un tableau vide : pas de WHERE")
+	tabFiltres est un tableau
+	TableauAjoute(tabFiltres, oPrix.Gt(10))
+	TableauAjoute(tabFiltres, oVide)
+	TableauAjoute(tabFiltres, oNom.Like("a%"))
+	oTous est un cEbRequete = oBurin.Select().From(oProduits).Where(oBurin.AllOf(tabFiltres)).ToSQL()
+	dbgVérifieEgalité(oTous.Texte(), EbTestSelectProduits() + ` WHERE ("produits"."prix" > {p1} AND "produits"."nom" LIKE {p2})`, "AllOf : AND, le vide est passé")
+	oUn est un cEbRequete = oBurin.Select().From(oProduits).Where(oBurin.AnyOf(tabFiltres)).ToSQL()
+	dbgVérifieEgalité(oUn.Texte(), EbTestSelectProduits() + ` WHERE ("produits"."prix" > {p1} OR "produits"."nom" LIKE {p2})`, "AnyOf : OR")
+	tabSeule est un tableau
+	TableauAjoute(tabSeule, oVide)
+	TableauAjoute(tabSeule, oPrix.Eq(1))
+	oSeule est un cEbRequete = oBurin.Select().From(oProduits).Where(oBurin.AllOf(tabSeule)).ToSQL()
+	dbgVérifieEgalité(oSeule.Texte(), EbTestSelectProduits() + ` WHERE "produits"."prix" = {p1}`, "une seule condition utile : sans parenthèses")
+	oAvecVide est un cEbRequete = oBurin.Select().From(oProduits).Where(oPrix.Gt(10)).AndWhere(oVide).ToSQL()
+	dbgVérifieEgalité(oAvecVide.Texte(), EbTestSelectProduits() + ` WHERE "produits"."prix" > {p1}`, "AndWhere d'une condition vide : ignoré")
+FIN
+
+// OrderBy, Limit et Offset : l'ordre des ordres est celui d'écriture ; un décalage seul passe par LIMIT -1 (SQLite) ; une limite zéro reste une limite.
+PROCEDURE scenario_order_by_limit_offset()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oPrix     est un cEbColonne = oProduits.ColonneNommee("prix")
+	oNom      est un cEbColonne = oProduits.ColonneNommee("nom")
+	oPage     est un cEbRequete = oBurin.Select().From(oProduits).OrderBy(oPrix.Desc()).OrderBy(oNom.Asc()).Limit(5).Offset(10).ToSQL()
+	dbgVérifieEgalité(oPage.Texte(), EbTestSelectProduits() + ` ORDER BY "produits"."prix" DESC, "produits"."nom" ASC LIMIT 5 OFFSET 10`, "deux ordres, limite et décalage")
+	oSaut est un cEbRequete = oBurin.Select().From(oProduits).Offset(10).ToSQL()
+	dbgVérifieEgalité(oSaut.Texte(), EbTestSelectProduits() + " LIMIT -1 OFFSET 10", "décalage seul")
+	oZero est un cEbRequete = oBurin.Select().From(oProduits).Limit(0).ToSQL()
+	dbgVérifieEgalité(oZero.Texte(), EbTestSelectProduits() + " LIMIT 0", "limite zéro")
+	oOrdre est un cEbRequete = oBurin.Select().From(oProduits).Where(oPrix.Gt(1)).OrderBy(oPrix.Asc()).Limit(3).ToSQL()
+	dbgVérifieEgalité(oOrdre.Texte(), EbTestSelectProduits() + ` WHERE "produits"."prix" > {p1} ORDER BY "produits"."prix" ASC LIMIT 3`, "WHERE, ORDER BY, LIMIT dans l'ordre du SQL")
+FIN
+
+// Chaque Select() crée un constructeur neuf : deux requêtes issues du même objet ne partagent rien, même si l'une est remplie après l'autre.
+PROCEDURE scenario_un_select_neuf_a_chaque_appel()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oPrix     est un cEbColonne = oProduits.ColonneNommee("prix")
+	oPremier  est un cEbSelect  = oBurin.Select()
+	oSecond   est un cEbSelect  = oBurin.Select()
+	oPremier.From(oProduits).Where(oPrix.Gt(10)).Limit(2)
+	oSecond.From(oProduits)
+	dbgVérifieEgalité(oSecond.ToSQL().Texte(), EbTestSelectProduits(), "le second n'a ni condition ni limite")
+	dbgVérifieEgalité(oPremier.ToSQL().Texte(), EbTestSelectProduits() + ` WHERE "produits"."prix" > {p1} LIMIT 2`, "le premier garde les siennes")
+FIN
+
+// L'alias est « table__colonne » : deux tables qui ont chacune « nom » donnent deux alias distincts (OWL rend les lignes par nom de colonne : sans alias, l'une écraserait l'autre).
+PROCEDURE scenario_alias_unique_par_colonne()
+	oBurin      est un cEbBurin  = EbTestBurin()
+	oProduits   est un cEbTable  = EbTestProduits()
+	oCategories est un cEbTable  = EbTestCategories()
+	oSelect     est un cEbSelect = oBurin.Select()
+	dbgVérifieEgalité(oSelect.Alias(oProduits.ColonneNommee("nom")), "produits__nom", "alias de produits.nom")
+	dbgVérifieEgalité(oSelect.Alias(oCategories.ColonneNommee("nom")), "categories__nom", "alias de categories.nom : différent")
+	oRequete est un cEbRequete = oBurin.Select().From(oCategories).ToSQL()
+	dbgVérifieEgalité(oRequete.Texte(), `SELECT "categories"."id" AS "categories__id", "categories"."nom" AS "categories__nom" FROM "categories"`, "SELECT d'une autre table")
+FIN
+
+// Les erreurs de construction ont un code propre : table absente (7006), colonne d'une autre table dans la condition ou dans l'ordre (7001, « avez-vous oublié la jointure ? »), limite ou décalage négatifs (7004).
+PROCEDURE scenario_erreurs_de_construction()
+	oBurin      est un cEbBurin         = EbTestBurin()
+	oProduits   est un cEbTable         = EbTestProduits()
+	oCategories est un cEbTable         = EbTestCategories()
+	oCatNom     est un cEbColonne       = oCategories.ColonneNommee("nom")
+	oVide       est un cEbTable("vide")
+	dbgVérifieEgalité(Gauche(EbTestRefusToSQL(oBurin.Select()), 5), "7006|", "pas de table")
+	dbgVérifieEgalité(Gauche(EbTestRefusToSQL(oBurin.Select().From(oVide)), 5), "7006|", "table sans colonne")
+	sRes est une chaîne = EbTestRefusToSQL(oBurin.Select().From(oProduits).Where(oCatNom.Eq("jouets")))
+	dbgVérifieEgalité(Gauche(sRes, 5), "7001|", "colonne d'une autre table dans le WHERE")
+	dbgVérifieVrai(Position(sRes, "categories.nom") > 0 ET Position(sRes, "jointure") > 0, "le message cite la colonne et la jointure : " + sRes)
+	dbgVérifieEgalité(Gauche(EbTestRefusToSQL(oBurin.Select().From(oProduits).OrderBy(oCatNom.Asc())), 5), "7001|", "colonne d'une autre table dans l'ordre")
+	sNeg est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oBurin.Select().Limit(-1)
+	FAIRE
+		sNeg = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sNeg, "7004", "Limit négatif")
+	sNeg = ""
+	QUAND EXCEPTION DANS
+		oBurin.Select().Offset(-5)
+	FAIRE
+		sNeg = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sNeg, "7004", "Offset négatif")
+FIN
+
+// Raw : du SQL brut avec des paramètres nommés, accepté partout où une condition l'est, y compris combiné à une autre.
+PROCEDURE scenario_raw_dans_where()
+	oBurin        est un cEbBurin           = EbTestBurin()
+	oProduits     est un cEbTable           = EbTestProduits()
+	oNom          est un cEbColonne         = oProduits.ColonneNommee("nom")
+	tabParametres est un tableau associatif
+	tabParametres["min"] = 10
+	tabParametres["max"] = 20
+	oBrute   est un cEbSql             = oBurin.Raw(`"produits"."prix" BETWEEN {min} AND {max}`, tabParametres)
+	oRequete est un cEbRequete         = oBurin.Select().From(oProduits).Where(oNom.Like("a%")).AndWhere(oBrute).ToSQL()
+	tabP     est un tableau associatif = oRequete.Parametres()
+	dbgVérifieEgalité(oRequete.Texte(), EbTestSelectProduits() + ` WHERE ("produits"."nom" LIKE {p1} AND "produits"."prix" BETWEEN {p2} AND {p3})`, "le brut s'insère, ses valeurs gardent leur rang")
+	dbgVérifieEgalité(tabP["p2"] + tabP["p3"], 30, "ses valeurs sont des paramètres")
+FIN

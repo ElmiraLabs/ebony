@@ -1,0 +1,68 @@
+// Une table, telle que Burin la connaît : un nom et des colonnes, lisibles sans exécuter la moindre requête (une factory ou un seeder s'en servira pour fabriquer une ligne, comme le constructeur s'en sert pour
+// vérifier le type d'une valeur). C'est une VALEUR que l'on passe à From(), pas un identifiant : db.Select().From(produits).
+// Une table se remplit une fois, à sa création, avec AjouteColonne ; l'écrire à la main ou la générer donne le même objet.
+cEbTable est une Classe
+PRIVÉ
+	sNom        est une chaîne = ""
+	tabColonnes est un tableau
+
+	PROCEDURE Constructeur(NomTable est une chaîne)
+		SI PAS EbNomSqlValide(NomTable) ALORS
+			ExceptionDéclenche(7005, "Définition de table invalide : le nom est vide ou contient un caractère de contrôle.")
+		FIN
+		:sNom = NomTable
+	FIN
+
+	// Son nom en base.
+	PROCEDURE PUBLIQUE Nom() : chaîne
+		RENVOYER :sNom
+	FIN
+
+	// Ses colonnes (des cEbColonne), dans l'ordre où elles ont été ajoutées : c'est l'ordre d'un SELECT sans liste.
+	PROCEDURE PUBLIQUE Colonnes() : tableau
+		RENVOYER :tabColonnes
+	FIN
+
+	// Ajoute une colonne et la rend (pour écrire des conditions : produits.Prix.Gt(10)). Lève (7005) pour un nom vide, une nature inconnue ou un nom déjà pris dans cette table.
+	PROCEDURE PUBLIQUE AjouteColonne(NomColonne est une chaîne, Nature est une chaîne, ExigeValeur est un booléen, EstCle est un booléen) : cEbColonne
+		oColonne est un cEbColonne(:sNom, NomColonne, Nature, ExigeValeur, EstCle)
+		POUR TOUT oCandidate DE :tabColonnes
+			oExistante est un cEbColonne = oCandidate
+			SI Minuscule(oExistante.Nom()) = Minuscule(NomColonne) ALORS
+				ExceptionDéclenche(7005, "Définition de table invalide : la colonne « " + NomColonne + " » est déjà dans « " + :sNom + " ».")
+			FIN
+		FIN
+		TableauAjoute(:tabColonnes, oColonne)
+		RENVOYER oColonne
+	FIN
+
+	// Vrai si la table a une colonne de ce nom (la casse ne compte pas).
+	PROCEDURE PUBLIQUE Possede(sColonne est une chaîne) : booléen
+		bTrouvee est un booléen = Faux
+		POUR TOUT oCandidate DE :tabColonnes
+			oExistante est un cEbColonne = oCandidate
+			SI Minuscule(oExistante.Nom()) = Minuscule(sColonne) ALORS
+				bTrouvee = Vrai
+			FIN
+		FIN
+		RENVOYER bTrouvee
+	FIN
+
+	// La colonne de ce nom (la casse ne compte pas). Lève (7005) si la table n'en a pas.
+	PROCEDURE PUBLIQUE ColonneNommee(sColonne est une chaîne) : cEbColonne
+		nTrouvee est un entier = 0
+		nRang    est un entier = 0
+		POUR TOUT oCandidate DE :tabColonnes
+			oExistante est un cEbColonne = oCandidate
+			nRang++
+			SI Minuscule(oExistante.Nom()) = Minuscule(sColonne) ALORS
+				nTrouvee = nRang
+			FIN
+		FIN
+		SI nTrouvee = 0 ALORS
+			ExceptionDéclenche(7005, "La table « " + :sNom + " » n'a pas de colonne « " + sColonne + " ».")
+		FIN
+		oTrouvee est un cEbColonne = :tabColonnes[nTrouvee]
+		RENVOYER oTrouvee
+	FIN
+FIN

@@ -1,0 +1,7 @@
+{
+	"commandes": [
+		{ "noms": ["migrate"], "procedure": "EbExecuteMigrate" },
+		{ "noms": ["make"], "procedure": "EbExecuteMake" },
+		{ "noms": ["openapi"], "procedure": "EbExecuteOpenapi" }
+	]
+}

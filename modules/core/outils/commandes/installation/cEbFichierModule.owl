@@ -1,0 +1,88 @@
+// Un fichier que fournit un module (manifeste « fichiers ») : écrit par « ebony new », « ebony init » et « ebony add » dans le projet, qui en est ensuite propriétaire (par exemple config/Auth.owl). Objet valeur immuable.
+// Il peut dépendre d'une OPTION de « ebony new » (« auth » : seulement avec --auth), d'une CAPACITÉ du fournisseur du projet (un mot que le manifeste du module qui offre le fournisseur déclare : voir cEbFournisseursModule),
+// et d'une COMMANDE (« new » : seul « ebony new » l'écrit). Il porte le nom de la table des utilisateurs sous la forme {table_utilisateurs}, remplacé par Resolue().
+// Si le fichier existe déjà, deux politiques : « refuse » (défaut : conflit, rien n'est écrit, code 28) ou « conserve » (le fichier du projet est gardé et listé, jamais écrasé).
+// Il peut aussi nommer l'ÉTAPE que l'utilisateur doit faire ensuite (une commande, que « ebony add » lui dit de lancer). Seuls les dossiers config/ et database/ sont permis (voir EbFichierDuManifeste).
+cEbFichierModule est une Classe
+PRIVÉ
+	sModule   est une chaîne            = ""
+	sChemin   est une chaîne            = ""
+	sOption   est une chaîne            = ""
+	sCapacite est une chaîne            = ""
+	bConserve est un booléen            = Faux
+	sCommande est une chaîne            = ""
+	sEtape    est une chaîne            = ""
+	tabLignes est un tableau de chaînes
+
+	PROCEDURE Constructeur(Module est une chaîne, Chemin est une chaîne, Option est une chaîne, Capacite est une chaîne, Conserve est un booléen, Commande est une chaîne, Etape est une chaîne, Lignes est un tableau de chaînes)
+		:sModule = Module
+		:sChemin = Chemin
+		:sOption = Option
+		:sCapacite = Capacite
+		:bConserve = Conserve
+		:sCommande = Commande
+		:sEtape = Etape
+		POUR TOUT sLigne DE Lignes
+			TableauAjoute(:tabLignes, sLigne)
+		FIN
+	FIN
+
+	// Le module qui le fournit (le nom de son dossier dans modules/).
+	PROCEDURE PUBLIQUE Module() : chaîne
+		RENVOYER :sModule
+	FIN
+
+	// Le chemin dans le projet, relatif, avec des « / » (config/Auth.owl).
+	PROCEDURE PUBLIQUE Chemin() : chaîne
+		RENVOYER :sChemin
+	FIN
+
+	// L'option de « ebony new » dont il dépend : « auth », ou vide (toujours).
+	PROCEDURE PUBLIQUE Option() : chaîne
+		RENVOYER :sOption
+	FIN
+
+	// La capacité que le fournisseur du projet doit offrir pour qu'il soit écrit, ou vide (aucune exigence).
+	PROCEDURE PUBLIQUE Capacite() : chaîne
+		RENVOYER :sCapacite
+	FIN
+
+	// Vrai si un fichier déjà présent dans le projet est gardé (« conserve ») ; Faux s'il est un conflit (« refuse »).
+	PROCEDURE PUBLIQUE Conserve() : booléen
+		RENVOYER :bConserve
+	FIN
+
+	// La seule commande qui l'écrit (« new »), ou vide (« new », « init » et « add »).
+	PROCEDURE PUBLIQUE Commande() : chaîne
+		RENVOYER :sCommande
+	FIN
+
+	// La commande que l'utilisateur doit lancer après l'avoir reçu, ou vide.
+	PROCEDURE PUBLIQUE Etape() : chaîne
+		RENVOYER :sEtape
+	FIN
+
+	// Les lignes du fichier, telles que le manifeste les donne (une tabulation s'y écrit \t).
+	PROCEDURE PUBLIQUE Lignes() : tableau de chaînes
+		RENVOYER :tabLignes
+	FIN
+
+	// Le texte du fichier : les lignes séparées par un saut de ligne (LF), avec un saut de ligne final.
+	PROCEDURE PUBLIQUE Contenu() : chaîne
+		sContenu est une chaîne = ""
+		POUR TOUT sLigne DE :tabLignes
+			sContenu += sLigne + Caract(10)
+		FIN
+		RENVOYER sContenu
+	FIN
+
+	// Le même fichier, avec {table_utilisateurs} remplacé par le nom de la table des utilisateurs du projet. Objet valeur : l'original n'est pas modifié.
+	PROCEDURE PUBLIQUE Resolue(sTable est une chaîne) : cEbFichierModule
+		tabResolues est un tableau de chaînes
+		POUR TOUT sLigne DE :tabLignes
+			TableauAjoute(tabResolues, Remplace(sLigne, "{table_utilisateurs}", sTable))
+		FIN
+		oResolu est un cEbFichierModule(:sModule, :sChemin, :sOption, :sCapacite, :bConserve, :sCommande, :sEtape, tabResolues)
+		RENVOYER oResolu
+	FIN
+FIN

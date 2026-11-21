@@ -1,0 +1,42 @@
+// Écrit le document d'« ebony openapi » dans le fichier de --sortie. Tout est vérifié AVANT d'écrire : le dossier du fichier existe, le chemin n'est pas un dossier, et un fichier qui existe est CONSERVÉ (ebony ne remplace rien sans demande explicite)
+// sauf avec --remplace. Le fichier est écrit en UTF-8 sans BOM, fins de ligne LF : c'est le but de l'option, qui évite la redirection « > » de Windows PowerShell 5.1 (UTF-16, que les outils OpenAPI refusent).
+// Ne connaît que les ports iEbSystemeFichiers et iEbEcritureFichiers : se teste avec un faux disque. Erreurs : 28 conflit (fichier existant sans --remplace, chemin occupé par un dossier, dossier absent), 24 écriture interrompue.
+cEbEcritureOpenapi est une Classe
+PRIVÉ
+	oSysteme  est un iEbSystemeFichiers
+	oEcriture est un iEbEcritureFichiers
+
+	PROCEDURE Constructeur(systeme est un iEbSystemeFichiers, ecriture est un iEbEcritureFichiers)
+		:oSysteme = systeme
+		:oEcriture = ecriture
+	FIN
+
+	// Le chemin complet du fichier de sortie : tel quel s'il est absolu (« C:\x », « \x », « /x »), sinon relatif au dossier de lancement (les « / » d'un chemin relatif valent « \ »).
+	PROCEDURE PRIVÉE Complet(sSortie est une chaîne) : chaîne
+		SI Gauche(sSortie, 1) = "/" OU Gauche(sSortie, 1) = "\" OU Milieu(sSortie, 2, 1) = ":" ALORS
+			RENVOYER EbNormaliseChemin(sSortie)
+		FIN
+		RENVOYER EbJointChemin(:oSysteme.DossierDeLancement(), Remplace(sSortie, "/", "\"))
+	FIN
+
+	// Écrit sDocument dans le fichier de la demande et rend son chemin complet.
+	PROCEDURE PUBLIQUE Ecrit(oDemande est un cEbDemandeOpenapi, sDocument est une chaîne) : chaîne
+		sChemin  est une chaîne = :Complet(oDemande.Sortie())
+		sDossier est une chaîne = EbParentChemin(sChemin)
+		SI :oSysteme.DossierExiste(sChemin) ALORS
+			ExceptionDéclenche(28, "« " + sChemin + " » est un dossier : donnez un nom de fichier à --sortie. Rien n'a été écrit.")
+		FIN
+		SI sDossier <> "" ET PAS :oSysteme.DossierExiste(sDossier) ALORS
+			ExceptionDéclenche(28, "Le dossier « " + sDossier + " » n'existe pas : ebony ne crée pas de dossier pour --sortie. Rien n'a été écrit.")
+		FIN
+		SI :oSysteme.FichierExiste(sChemin) ET PAS oDemande.Remplace() ALORS
+			ExceptionDéclenche(28, "Le fichier « " + sChemin + " » existe déjà et n'a pas été modifié : ajoutez --remplace pour le remplacer, ou choisissez un autre nom.")
+		FIN
+		QUAND EXCEPTION DANS
+			:oEcriture.EcritTexte(sChemin, sDocument)
+		FAIRE
+			ExceptionDéclenche(24, "Écriture interrompue : " + ExceptionInfo(errMessage) + ". Le fichier « " + sChemin + " » a pu être laissé incomplet.")
+		FIN
+		RENVOYER sChemin
+	FIN
+FIN

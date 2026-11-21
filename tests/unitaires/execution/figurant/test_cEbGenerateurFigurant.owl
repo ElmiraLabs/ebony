@@ -1,0 +1,218 @@
+// Tests du générateur figurant : déterministe (même graine, mêmes valeurs ; rien n'est tiré par Hasard), reconnaît le nom du champ, un prénom et un nom par ligne, valeurs valides (dates, entiers).
+
+// Un générateur sur la ligne n (n appels à NouvelleLigne) avec une graine.
+PROCEDURE EbTestFigurantLigne(nGraine est un entier, nLigne est un entier) : cEbGenerateurFigurant
+	oGenerateur est un cEbGenerateurFigurant(nGraine)
+	POUR i = 1 À nLigne
+		oGenerateur.NouvelleLigne()
+	FIN
+	RENVOYER oGenerateur
+FIN
+
+// Une suite de valeurs de plusieurs types, écrite en une chaîne : de quoi comparer deux générateurs.
+PROCEDURE EbTestFigurantEmpreinte(oGenerateur est un cEbGenerateurFigurant) : chaîne
+	sRes est une chaîne = ""
+	POUR i = 1 À 5
+		oGenerateur.NouvelleLigne()
+		sRes += oGenerateur.ValeurTexte("prenom") + "|" + oGenerateur.ValeurTexte("nom") + "|" + oGenerateur.ValeurTexte("ville") + "|" + oGenerateur.ValeurEntier() + "|" + oGenerateur.ValeurReel() + "|" + oGenerateur.ValeurDate() + ";"
+	FIN
+	RENVOYER sRes
+FIN
+
+// La même graine donne exactement les mêmes valeurs ; une autre graine en donne d'autres.
+PROCEDURE scenario_figurant_meme_graine_memes_valeurs()
+	sPremiere est une chaîne = EbTestFigurantEmpreinte(cEbGenerateurFigurant(42))
+	sSeconde  est une chaîne = EbTestFigurantEmpreinte(cEbGenerateurFigurant(42))
+	sAutre    est une chaîne = EbTestFigurantEmpreinte(cEbGenerateurFigurant(43))
+	dbgVérifieEgalité(sPremiere, sSeconde, "deux générateurs de graine 42 : mêmes valeurs")
+	dbgVérifieVrai(sPremiere <> sAutre, "la graine 43 donne autre chose")
+FIN
+
+// Une graine nulle, négative ou énorme est ramenée dans la plage : le générateur ne se bloque pas (la suite d'une graine 0 resterait à 0).
+PROCEDURE scenario_figurant_graine_invalide_corrigee()
+	oZero    est un cEbGenerateurFigurant = cEbGenerateurFigurant(0)
+	oNegatif est un cEbGenerateurFigurant = cEbGenerateurFigurant(-5)
+	oEnorme  est un cEbGenerateurFigurant = cEbGenerateurFigurant(9000000000)
+	sZero    est une chaîne               = EbTestFigurantEmpreinte(oZero)
+	dbgVérifieVrai(sZero <> "", "graine 0 : des valeurs sont rendues")
+	dbgVérifieVrai(EbTestFigurantEmpreinte(oNegatif) <> "", "graine négative : des valeurs sont rendues")
+	dbgVérifieVrai(EbTestFigurantEmpreinte(oEnorme) <> "", "graine énorme : des valeurs sont rendues")
+	dbgVérifieVrai(EbTestFigurantEmpreinte(cEbGenerateurFigurant(1)) <> EbTestFigurantEmpreinte(cEbGenerateurFigurant(2)), "deux petites graines différentes donnent des valeurs différentes")
+FIN
+
+// Le nom du champ choisit la sorte de valeur : prénom, nom de famille, ville, pays y sont des mots de la liste, jamais « champ n ».
+PROCEDURE scenario_figurant_reconnait_le_nom_du_champ()
+	oGenerateur est un cEbGenerateurFigurant = EbTestFigurantLigne(7, 1)
+	oDonnees    est un cEbDonneesFigurant
+	dbgVérifieVrai(TableauCherche(oDonnees.Prenoms(), oGenerateur.ValeurTexte("prenom")) > 0, "prenom : un prénom de la liste")
+	dbgVérifieVrai(TableauCherche(oDonnees.Prenoms(), oGenerateur.ValeurTexte("Prénom")) > 0, "Prénom (majuscule, accent) : le même prénom")
+	dbgVérifieVrai(TableauCherche(oDonnees.Noms(), oGenerateur.ValeurTexte("nom")) > 0, "nom : un nom de famille de la liste")
+	dbgVérifieVrai(TableauCherche(oDonnees.Villes(), oGenerateur.ValeurTexte("ville")) > 0, "ville : une ville de la liste")
+	dbgVérifieVrai(TableauCherche(oDonnees.Pays(), oGenerateur.ValeurTexte("pays")) > 0, "pays : un pays de la liste")
+	dbgVérifieVrai(TableauCherche(oDonnees.Villes(), oGenerateur.ValeurTexte("ville_naissance")) > 0, "ville_naissance : finit par ville")
+FIN
+
+// Prénom, nom et courriel d'une même ligne vont ensemble ; le courriel porte le numéro de la ligne (unique) ; une autre ligne change d'identité.
+PROCEDURE scenario_figurant_une_identite_par_ligne()
+	oGenerateur est un cEbGenerateurFigurant = EbTestFigurantLigne(11, 1)
+	sPrenom     est une chaîne               = oGenerateur.ValeurTexte("prenom")
+	sNom        est une chaîne               = oGenerateur.ValeurTexte("nom")
+	sCourriel   est une chaîne               = oGenerateur.ValeurTexte("email")
+	dbgVérifieEgalité(oGenerateur.ValeurTexte("prenom"), sPrenom, "le prénom ne change pas dans la ligne")
+	dbgVérifieEgalité(oGenerateur.ValeurTexte("nom"), sNom, "le nom ne change pas dans la ligne")
+	dbgVérifieEgalité(Droite(sCourriel, 13), "1@example.com", "le courriel finit par le numéro de ligne et le domaine d'exemple")
+	dbgVérifieVrai(Position(sCourriel, " ") = 0, "pas d'espace dans un courriel")
+	dbgVérifieVrai(Position(sCourriel, "é") = 0 ET Position(sCourriel, "'") = 0, "ni accent ni apostrophe")
+	oGenerateur.NouvelleLigne()
+	dbgVérifieVrai(oGenerateur.ValeurTexte("email") <> sCourriel, "la ligne suivante a un autre courriel")
+FIN
+
+// Un nom d'identité à apostrophe ou à tiret donne un courriel propre : N'Guessan et Jean-Marc deviennent nguessan et jeanmarc.
+PROCEDURE scenario_figurant_courriel_sans_apostrophe_ni_tiret()
+	oDonnees est un cEbDonneesFigurant
+	nTrouves est un entier             = 0
+	POUR nGraine = 1 À 400
+		oGenerateur est un cEbGenerateurFigurant = EbTestFigurantLigne(nGraine, 1)
+		sCourriel   est une chaîne               = oGenerateur.ValeurTexte("courriel")
+		SI Position(sCourriel, "'") > 0 OU Position(sCourriel, "-") > 0 OU Position(sCourriel, " ") > 0 ALORS
+			nTrouves++
+		FIN
+	FIN
+	dbgVérifieEgalité(nTrouves, 0, "aucun des 400 courriels ne garde apostrophe, tiret ou espace")
+FIN
+
+// Les autres sortes de texte : téléphone fictif, adresse, code postal, société, phrase ; un champ inconnu garde « champ n ».
+PROCEDURE scenario_figurant_autres_sortes_de_texte()
+	oGenerateur est un cEbGenerateurFigurant = EbTestFigurantLigne(5, 3)
+	dbgVérifieEgalité(Gauche(oGenerateur.ValeurTexte("telephone"), 9), "01 99 00 ", "téléphone : la plage fictive 01 99 00")
+	dbgVérifieEgalité(Taille(oGenerateur.ValeurTexte("tel")), 14, "tel : 14 caractères (xx xx xx xx xx)")
+	sAdresse est une chaîne = oGenerateur.ValeurTexte("adresse")
+	dbgVérifieVrai(Position(sAdresse, " ") > 0, "adresse : un numéro, une voie, un nom")
+	dbgVérifieEgalité(Taille(oGenerateur.ValeurTexte("code_postal")), 5, "code postal : cinq chiffres")
+	dbgVérifieVrai(Taille(oGenerateur.ValeurTexte("societe")) > 8, "société : un nom d'entreprise")
+	sPhrase est une chaîne = oGenerateur.ValeurTexte("description")
+	dbgVérifieEgalité(Droite(sPhrase, 1), ".", "une phrase finit par un point")
+	dbgVérifieEgalité(Gauche(sPhrase, 1), Majuscule(Gauche(sPhrase, 1)), "et commence par une majuscule")
+	dbgVérifieEgalité(oGenerateur.ValeurTexte("reference"), "reference 3", "un champ inconnu : le nom et le numéro de ligne, comme le compteur")
+FIN
+
+// Entier de 1 à 100, réel de 0 à 999,99, dates valides sur plusieurs milliers de tirages.
+PROCEDURE scenario_figurant_valeurs_valides()
+	oGenerateur   est un cEbGenerateurFigurant = EbTestFigurantLigne(99, 1)
+	nHorsPlage    est un entier                = 0
+	nDatesFausses est un entier                = 0
+	POUR i = 1 À 2000
+		nEntier est un entier  = oGenerateur.ValeurEntier()
+		rReel   est un réel    = oGenerateur.ValeurReel()
+		sDate   est une chaîne = oGenerateur.ValeurDate()
+		SI nEntier < 1 OU nEntier > 100 OU rReel < 0 OU rReel >= 1000 ALORS
+			nHorsPlage++
+		FIN
+		SI Taille(sDate) <> 10 OU Milieu(sDate, 5, 1) <> "-" OU Milieu(sDate, 8, 1) <> "-" OU ChaîneVersEntier(Droite(sDate, 2)) > 28 OU ChaîneVersEntier(Milieu(sDate, 6, 2)) > 12 OU ChaîneVersEntier(Milieu(sDate, 6, 2)) < 1 ALORS
+			nDatesFausses++
+		FIN
+	FIN
+	dbgVérifieEgalité(nHorsPlage, 0, "entiers et réels dans leur plage")
+	dbgVérifieEgalité(nDatesFausses, 0, "dates ISO valides")
+	sDateHeure est une chaîne = oGenerateur.ValeurDateHeure()
+	dbgVérifieEgalité(Taille(sDateHeure), 19, "date-heure : AAAA-MM-JJTHH:MM:SS")
+	dbgVérifieEgalité(Milieu(sDateHeure, 11, 1), "T", "séparée par T")
+FIN
+
+// Le booléen n'est pas constant : sur 200 tirages, des vrais et des faux.
+PROCEDURE scenario_figurant_booleen_varie()
+	oGenerateur est un cEbGenerateurFigurant = EbTestFigurantLigne(3, 1)
+	nVrais      est un entier                = 0
+	POUR i = 1 À 200
+		SI oGenerateur.ValeurBooleen() ALORS
+			nVrais++
+		FIN
+	FIN
+	dbgVérifieVrai(nVrais > 40 ET nVrais < 160, "ni toujours vrai ni toujours faux")
+FIN
+
+// Valeurs exactes de la graine 42 : la suite est faite d'entiers seulement, donc la même sous Windows et sous Linux. Si ce scénario échoue après un changement des listes ou de l'algorithme, c'est que les données d'exemple de tout le monde changent.
+PROCEDURE scenario_figurant_suite_exacte_graine_42()
+	oGenerateur est un cEbGenerateurFigurant = cEbGenerateurFigurant(42)
+	oGenerateur.NouvelleLigne()
+	dbgVérifieEgalité(oGenerateur.ValeurTexte("prenom") + " " + oGenerateur.ValeurTexte("nom"), "Mélissa Mercier", "la première identité de la graine 42")
+	dbgVérifieEgalité(oGenerateur.ValeurEntier(), 38, "le premier entier qui suit")
+FIN
+
+// Un prénom féminin ou masculin est TOUJOURS de la bonne liste, sur 300 lignes de graines différentes ; sans genre, les deux genres apparaissent.
+PROCEDURE scenario_figurant_prenom_selon_le_genre()
+	oDonnees   est un cEbDonneesFigurant
+	nMauvaisF  est un entier             = 0
+	nMauvaisM  est un entier             = 0
+	nFeminins  est un entier             = 0
+	nMasculins est un entier             = 0
+	POUR nGraine = 1 À 300
+		oGenerateur est un cEbGenerateurFigurant = EbTestFigurantLigne(nGraine, 1)
+		SI TableauCherche(oDonnees.PrenomsFeminins(), oGenerateur.ValeurTexteDeSorte("prenom-feminin", "x")) < 1 ALORS
+			nMauvaisF++
+		FIN
+		oAutre est un cEbGenerateurFigurant = EbTestFigurantLigne(nGraine, 1)
+		SI TableauCherche(oDonnees.PrenomsMasculins(), oAutre.ValeurTexteDeSorte("prenom-masculin", "x")) < 1 ALORS
+			nMauvaisM++
+		FIN
+		oSans est un cEbGenerateurFigurant = EbTestFigurantLigne(nGraine, 1)
+		sSans est une chaîne               = oSans.ValeurTexteDeSorte("prenom", "x")
+		SI TableauCherche(oDonnees.PrenomsFeminins(), sSans) > 0 ALORS
+			nFeminins++
+		FIN
+		SI TableauCherche(oDonnees.PrenomsMasculins(), sSans) > 0 ALORS
+			nMasculins++
+		FIN
+	FIN
+	dbgVérifieEgalité(nMauvaisF, 0, "prenom-feminin : toujours un prénom féminin")
+	dbgVérifieEgalité(nMauvaisM, 0, "prenom-masculin : toujours un prénom masculin")
+	dbgVérifieVrai(nFeminins > 60 ET nMasculins > 60, "sans genre : des féminins et des masculins")
+FIN
+
+// Les deux listes de prénoms ont la même taille et ne partagent aucun prénom ; la liste mêlée les contient toutes (c'est l'ordre que les graines ont toujours vu : féminin, masculin, féminin…).
+PROCEDURE scenario_figurant_listes_de_prenoms_coherentes()
+	oDonnees est un cEbDonneesFigurant
+	dbgVérifieEgalité(oDonnees.PrenomsFeminins()..Occurrence, oDonnees.PrenomsMasculins()..Occurrence, "autant de féminins que de masculins")
+	dbgVérifieEgalité(oDonnees.Prenoms()..Occurrence, oDonnees.PrenomsFeminins()..Occurrence * 2, "la liste mêlée les contient toutes")
+	nCommuns est un entier = 0
+	POUR TOUT sPrenom DE oDonnees.PrenomsFeminins()
+		SI TableauCherche(oDonnees.PrenomsMasculins(), sPrenom) > 0 ALORS
+			nCommuns++
+		FIN
+	FIN
+	dbgVérifieEgalité(nCommuns, 0, "aucun prénom dans les deux listes")
+	dbgVérifieEgalité(oDonnees.Prenoms()[1], oDonnees.PrenomsFeminins()[1], "le premier est féminin")
+	dbgVérifieEgalité(oDonnees.Prenoms()[2], oDonnees.PrenomsMasculins()[1], "le deuxième est masculin")
+FIN
+
+// La sorte produit rend un nom de produit, jamais un nom de famille ; nom-de-famille rend un nom de famille ; une sorte vide ou inconnue garde le repli sur le nom de la colonne.
+PROCEDURE scenario_figurant_sorte_produit_et_autres()
+	oDonnees    est un cEbDonneesFigurant
+	oGenerateur est un cEbGenerateurFigurant = EbTestFigurantLigne(21, 1)
+	dbgVérifieVrai(TableauCherche(oDonnees.Produits(), oGenerateur.ValeurTexteDeSorte("produit", "nom")) > 0, "produit : un nom de produit de la liste")
+	dbgVérifieVrai(TableauCherche(oDonnees.Noms(), oGenerateur.ValeurTexteDeSorte("nom-de-famille", "nom")) > 0, "nom-de-famille : un nom de famille")
+	dbgVérifieVrai(TableauCherche(oDonnees.Villes(), oGenerateur.ValeurTexteDeSorte("ville", "x")) > 0, "ville : une ville")
+	dbgVérifieEgalité(Droite(oGenerateur.ValeurTexteDeSorte("courriel", "x"), 13), "1@example.com", "courriel : le numéro de ligne et le domaine d'exemple")
+	dbgVérifieEgalité(oGenerateur.ValeurTexteDeSorte("", "reference"), "reference 1", "sans sorte : le nom de la colonne, comme ValeurTexte")
+	dbgVérifieEgalité(oGenerateur.ValeurTexteDeSorte("inventee", "reference"), "reference 1", "une sorte inconnue : le même repli")
+FIN
+
+// Le nom de la colonne n'est plus consulté quand la sorte est donnée : « nom » avec la sorte produit n'est pas un nom de famille.
+PROCEDURE scenario_figurant_la_sorte_l_emporte_sur_le_nom_de_colonne()
+	oDonnees  est un cEbDonneesFigurant
+	nFamilles est un entier             = 0
+	POUR nGraine = 1 À 100
+		oGenerateur est un cEbGenerateurFigurant = EbTestFigurantLigne(nGraine, 1)
+		SI TableauCherche(oDonnees.Noms(), oGenerateur.ValeurTexteDeSorte("produit", "nom")) > 0 ALORS
+			nFamilles++
+		FIN
+	FIN
+	dbgVérifieEgalité(nFamilles, 0, "nom avec la sorte produit : jamais un nom de famille")
+FIN
+
+// Sans sorte, ValeurTexte et ValeurTexteDeSorte("") donnent la même valeur pour le même nom de colonne (rien n'a changé pour qui n'écrit pas de sorte).
+PROCEDURE scenario_figurant_sans_sorte_comme_avant()
+	sViaNom   est une chaîne = EbTestFigurantLigne(42, 1).ValeurTexte("prenom") + " " + EbTestFigurantLigne(42, 1).ValeurTexte("nom")
+	sViaSorte est une chaîne = EbTestFigurantLigne(42, 1).ValeurTexteDeSorte("prenom", "prenom") + " " + EbTestFigurantLigne(42, 1).ValeurTexteDeSorte("nom-de-famille", "nom")
+	dbgVérifieEgalité(sViaNom, sViaSorte, "le nom de la colonne se traduit en sorte : mêmes valeurs")
+FIN

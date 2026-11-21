@@ -1,0 +1,54 @@
+// Tests de cEbDemandeOpenapi (les arguments de « ebony openapi ») : sans option, --sortie en deux formes, --remplace, et chaque refus (code 25).
+
+// Les arguments écrits avec des « ; » donnent la demande, ou « code|message » si elle est refusée.
+PROCEDURE EbTestRefusDemandeOpenapi(sListe est une chaîne) : chaîne
+	sRes    est une chaîne            = ""
+	tabArgs est un tableau de chaînes
+	SI sListe <> "" ALORS
+		tabArgs = ChaîneDécoupe(sListe, ";")
+	FIN
+	QUAND EXCEPTION DANS
+		oDemande est un cEbDemandeOpenapi(tabArgs)
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+PROCEDURE EbTestDemandeOpenapi(sListe est une chaîne) : cEbDemandeOpenapi
+	tabArgs est un tableau de chaînes
+	SI sListe <> "" ALORS
+		tabArgs = ChaîneDécoupe(sListe, ";")
+	FIN
+	oDemande est un cEbDemandeOpenapi(tabArgs)
+	RENVOYER oDemande
+FIN
+
+// Sans argument : la sortie standard, rien à remplacer.
+PROCEDURE scenario_sans_option_sortie_standard()
+	oDemande est un cEbDemandeOpenapi = EbTestDemandeOpenapi("")
+	dbgVérifieEgalité(oDemande.Sortie(), "", "pas de fichier")
+	dbgVérifieFaux(oDemande.Remplace(), "rien à remplacer")
+FIN
+
+// --sortie en deux formes (« --sortie f » et « --sortie=f »), avec ou sans --remplace, à n'importe quelle place.
+PROCEDURE scenario_sortie_et_remplace()
+	dbgVérifieEgalité(EbTestDemandeOpenapi("--sortie;openapi.json").Sortie(), "openapi.json", "deux arguments")
+	dbgVérifieEgalité(EbTestDemandeOpenapi("--sortie=docs/api.json").Sortie(), "docs/api.json", "un seul argument")
+	dbgVérifieVrai(EbTestDemandeOpenapi("--sortie;a.json;--remplace").Remplace(), "--remplace après")
+	dbgVérifieVrai(EbTestDemandeOpenapi("--remplace;--sortie=a.json").Remplace(), "--remplace avant")
+	dbgVérifieFaux(EbTestDemandeOpenapi("--sortie;a.json").Remplace(), "sans --remplace")
+FIN
+
+// Refus : argument inconnu, valeur absente ou qui ressemble à une option, --sortie répétée, --remplace seul. Tous en code 25.
+PROCEDURE scenario_refus_des_arguments_d_openapi()
+	dbgVérifieEgalité(Gauche(EbTestRefusDemandeOpenapi("--json"), 3), "25|", "option inconnue")
+	dbgVérifieEgalité(Gauche(EbTestRefusDemandeOpenapi("fichier.json"), 3), "25|", "argument sans option")
+	dbgVérifieEgalité(Gauche(EbTestRefusDemandeOpenapi("--sortie"), 3), "25|", "--sortie sans valeur")
+	dbgVérifieEgalité(Gauche(EbTestRefusDemandeOpenapi("--sortie="), 3), "25|", "--sortie= vide")
+	dbgVérifieEgalité(Gauche(EbTestRefusDemandeOpenapi("--sortie;--remplace"), 3), "25|", "la valeur ressemble à une option")
+	dbgVérifieEgalité(Gauche(EbTestRefusDemandeOpenapi("--sortie;a.json;--sortie;b.json"), 3), "25|", "--sortie répétée")
+	sSeul est une chaîne = EbTestRefusDemandeOpenapi("--remplace")
+	dbgVérifieEgalité(Gauche(sSeul, 3), "25|", "--remplace sans --sortie")
+	dbgVérifieVrai(Position(sSeul, "--sortie") > 0, "le message dit de quoi il s'agit")
+FIN

@@ -1,0 +1,214 @@
+// Un SELECT en cours de construction, à la manière de Drizzle : db.Select().From(produits).Where(produits.Prix.Gt(10)).OrderBy(produits.Prix.Desc()).Limit(5).
+// Chaque méthode pose un membre et rend le constructeur (chaînage, en place : db.Select() en crée donc un NEUF à chaque appel). Rien ne part à la base : ToSQL() rend le texte et les paramètres, sans aucune base.
+// Les jointures s'ajoutent par InnerJoin et LeftJoin (la table jointe et la condition « ON ») : toutes les colonnes de toutes les tables sont sélectionnées.
+// Chaque colonne sélectionnée reçoit un alias unique « table__colonne » : OWL rend les lignes par NOM de colonne, deux colonnes de même nom (jointure) se perdraient sans erreur (mesuré sur OWL 1.8.1).
+// Les erreurs sont levées avec un code propre, jamais un SQL faux : colonne d'une autre table (7001), valeur refusée (7002), limite ou décalage invalide (7004), table absente (7006), jointure invalide (7009).
+cEbSelect est une Classe
+PRIVÉ
+	oDialecte             est un iEbDialecteSql
+	oTable                est un cEbTable
+	bTable                est un booléen            = Faux
+	oCondition            est un cEbSql
+	bCondition            est un booléen            = Faux
+	tabOrdres             est un tableau
+	nLimite               est un entier             = -1
+	nDecalage             est un entier             = -1
+	tabTablesJointes      est un tableau
+	tabGenresJointure     est un tableau de chaînes
+	tabConditionsJointure est un tableau
+
+	PROCEDURE Constructeur(dialecte est un iEbDialecteSql)
+		:oDialecte = dialecte
+	FIN
+
+	// La table interrogée (une valeur : un cEbTable). Toutes ses colonnes sont sélectionnées.
+	PROCEDURE PUBLIQUE From(oTableCible est un cEbTable) : cEbSelect
+		:oTable = oTableCible
+		:bTable = Vrai
+		RENVOYER objet
+	FIN
+
+	// Joint une table : INNER JOIN, seules les lignes qui ont une correspondance. La condition (« ON ») est un cEbSql, le plus souvent colonne.EqCol(autreColonne) ; elle peut citer toutes les tables de la requête.
+	// Lève (7009) pour une condition vide. Une table ne peut être jointe qu'une fois, et pas être celle du From (pas d'alias de table en v1) : ToSQL() le vérifie (7009).
+	PROCEDURE PUBLIQUE InnerJoin(oTableJointe est un cEbTable, oConditionJointure est un cEbSql) : cEbSelect
+		:Joint(" INNER JOIN ", "InnerJoin", oTableJointe, oConditionJointure)
+		RENVOYER objet
+	FIN
+
+	// Joint une table : LEFT JOIN, toutes les lignes de la table de gauche, et NULL pour les colonnes de la table jointe quand rien ne correspond. Mêmes règles que InnerJoin.
+	PROCEDURE PUBLIQUE LeftJoin(oTableJointe est un cEbTable, oConditionJointure est un cEbSql) : cEbSelect
+		:Joint(" LEFT JOIN ", "LeftJoin", oTableJointe, oConditionJointure)
+		RENVOYER objet
+	FIN
+
+	PROCEDURE Joint(sGenre est une chaîne, sMethode est une chaîne, oTableJointe est un cEbTable, oConditionJointure est un cEbSql)
+		SI oConditionJointure.Vide() ALORS
+			ExceptionDéclenche(7009, sMethode + "(" + oTableJointe.Nom() + ") sans condition : une jointure sans « ON » ferait un produit cartésien. Donnez la condition, par exemple colonne.EqCol(autreColonne).")
+		FIN
+		TableauAjoute(:tabTablesJointes, oTableJointe)
+		TableauAjoute(:tabGenresJointure, sGenre)
+		TableauAjoute(:tabConditionsJointure, oConditionJointure)
+	FIN
+
+	// La condition (cEbSql, rendue par colonne.Eq(…), db.AllOf(…), db.Raw(…)). Remplace la précédente ; une condition vide est ignorée.
+	PROCEDURE PUBLIQUE Where(oExpression est un cEbSql) : cEbSelect
+		SI oExpression.Vide() ALORS
+			:bCondition = Faux
+		SINON
+			:oCondition = oExpression
+			:bCondition = Vrai
+		FIN
+		RENVOYER objet
+	FIN
+
+	// Ajoute une condition à la précédente par AND ; sans condition précédente, c'est la condition. Une condition vide est ignorée.
+	PROCEDURE PUBLIQUE AndWhere(oExpression est un cEbSql) : cEbSelect
+		:Combine(" AND ", oExpression)
+		RENVOYER objet
+	FIN
+
+	// Ajoute une condition à la précédente par OR ; sans condition précédente, c'est la condition. Une condition vide est ignorée.
+	PROCEDURE PUBLIQUE OrWhere(oExpression est un cEbSql) : cEbSelect
+		:Combine(" OR ", oExpression)
+		RENVOYER objet
+	FIN
+
+	PROCEDURE Combine(sOperateur est une chaîne, oExpression est un cEbSql)
+		SI oExpression.Vide() ALORS
+			RETOUR
+		FIN
+		:oCondition = EbJointCondition(sOperateur, :oCondition, :bCondition, oExpression)
+		:bCondition = Vrai
+	FIN
+
+	// Ajoute un ordre (colonne.Asc() ou colonne.Desc()). Plusieurs ordres se suivent, dans l'ordre où ils sont ajoutés. Un ordre vide est ignoré.
+	PROCEDURE PUBLIQUE OrderBy(oOrdre est un cEbSql) : cEbSelect
+		SI PAS oOrdre.Vide() ALORS
+			TableauAjoute(:tabOrdres, oOrdre)
+		FIN
+		RENVOYER objet
+	FIN
+
+	// Au plus n lignes (n >= 0). Lève (7004) pour une valeur négative.
+	PROCEDURE PUBLIQUE Limit(nNombre est un entier) : cEbSelect
+		SI nNombre < 0 ALORS
+			ExceptionDéclenche(7004, "Limit(" + nNombre + ") refusée : la limite ne peut pas être négative.")
+		FIN
+		:nLimite = nNombre
+		RENVOYER objet
+	FIN
+
+	// Saute les n premières lignes (n >= 0). Lève (7004) pour une valeur négative.
+	PROCEDURE PUBLIQUE Offset(nNombre est un entier) : cEbSelect
+		SI nNombre < 0 ALORS
+			ExceptionDéclenche(7004, "Offset(" + nNombre + ") refusé : le décalage ne peut pas être négatif.")
+		FIN
+		:nDecalage = nNombre
+		RENVOYER objet
+	FIN
+
+	// Le alias d'une colonne sélectionnée : « table__colonne ». C'est sous ce nom que la base rend la valeur.
+	PROCEDURE PUBLIQUE Alias(oColonne est un cEbColonne) : chaîne
+		RENVOYER oColonne.NomTable() + "__" + oColonne.Nom()
+	FIN
+
+	// Toutes les tables de la requête (des cEbTable) : celle du From, puis les tables jointes, dans l'ordre.
+	PROCEDURE Tables() : tableau
+		tabTables est un tableau
+		TableauAjoute(tabTables, :oTable)
+		POUR TOUT oJointe DE :tabTablesJointes
+			TableauAjoute(tabTables, oJointe)
+		FIN
+		RENVOYER tabTables
+	FIN
+
+	// Vérifie la requête avant de l'écrire : une table (7006), au moins une colonne (7006), chaque table une seule fois (7009), chaque colonne citée par une condition, un ordre ou une jointure est d'une table de la requête (7001).
+	PROCEDURE Verifie()
+		SI PAS :bTable ALORS
+			ExceptionDéclenche(7006, "Requête incomplète : il manque la table, From(table) n'a pas été appelé.")
+		FIN
+		tabTables est un tableau = :Tables()
+		POUR i = 1 À tabTables..Occurrence
+			oUne est un cEbTable = tabTables[i]
+			SI oUne.Colonnes()..Occurrence = 0 ALORS
+				ExceptionDéclenche(7006, "Requête incomplète : la table « " + oUne.Nom() + " » n'a aucune colonne à sélectionner.")
+			FIN
+			POUR j = i + 1 À tabTables..Occurrence
+				oAutre est un cEbTable = tabTables[j]
+				SI Minuscule(oUne.Nom()) = Minuscule(oAutre.Nom()) ALORS
+					ExceptionDéclenche(7009, "La table « " + oUne.Nom() + " » est déjà dans la requête : une table ne peut être jointe qu'une fois (pas d'alias de table en v1).")
+				FIN
+			FIN
+		FIN
+		SI :bCondition ALORS
+			EbVerifieColonnesTables(tabTables, :oCondition)
+		FIN
+		POUR TOUT oOrdre DE :tabOrdres
+			EbVerifieColonnesTables(tabTables, oOrdre)
+		FIN
+		POUR TOUT oConditionJointe DE :tabConditionsJointure
+			EbVerifieColonnesTables(tabTables, oConditionJointe)
+		FIN
+	FIN
+
+	// Écrit « FROM … JOIN … ON … WHERE … » dans cette requête (le corps commun du SELECT et de son comptage).
+	PROCEDURE EcritCorps(oSql est un cEbSql)
+		oSql.AjouteTexte(" FROM ")
+		oSql.AjouteNomTable(:oTable.Nom())
+		POUR i = 1 À :tabTablesJointes..Occurrence
+			oJointe est un cEbTable = :tabTablesJointes[i]
+			oSql.AjouteTexte(:tabGenresJointure[i])
+			oSql.AjouteNomTable(oJointe.Nom())
+			oSql.AjouteTexte(" ON ")
+			oSql.AjouteSql(:tabConditionsJointure[i])
+		FIN
+		SI :bCondition ALORS
+			oSql.AjouteTexte(" WHERE ")
+			oSql.AjouteSql(:oCondition)
+		FIN
+	FIN
+
+	// Le texte SQL et ses paramètres, sans aucune base : de quoi tester la requête et de quoi l'envoyer. Lève (7006) sans table ou pour une table sans colonne, (7001) pour une colonne d'une table absente de la requête,
+	// (7009) pour une jointure invalide.
+	PROCEDURE PUBLIQUE ToSQL() : cEbRequete
+		:Verifie()
+		oSql est un cEbSql
+		oSql.AjouteTexte("SELECT ")
+		nRang est un entier = 0
+		POUR TOUT oTableLue DE :Tables()
+			oUneTable est un cEbTable = oTableLue
+			POUR TOUT oCandidate DE oUneTable.Colonnes()
+				oColonne est un cEbColonne = oCandidate
+				nRang++
+				SI nRang > 1 ALORS
+					oSql.AjouteTexte(", ")
+				FIN
+				oSql.AjouteColonne(oColonne.NomTable(), oColonne.Nom())
+				oSql.AjouteTexte(" AS ")
+				oSql.AjouteTable(:Alias(oColonne))
+			FIN
+		FIN
+		:EcritCorps(oSql)
+		POUR i = 1 À :tabOrdres..Occurrence
+			SI i = 1 ALORS
+				oSql.AjouteTexte(" ORDER BY ")
+			SINON
+				oSql.AjouteTexte(", ")
+			FIN
+			oSql.AjouteSql(:tabOrdres[i])
+		FIN
+		oSql.AjouteTexte(:oDialecte.LimiteDecalage(:nLimite, :nDecalage))
+		RENVOYER oSql.Construit(:oDialecte)
+	FIN
+
+	// Le texte SQL qui COMPTE les lignes (« SELECT COUNT(*) AS "total" FROM … WHERE … »), jointures comprises : une seule ligne, une seule colonne « total ». L'ordre, la limite et le décalage n'y sont pas écrits (compter une page n'a pas de sens).
+	// Mêmes vérifications que ToSQL().
+	PROCEDURE PUBLIQUE ToSQLCount() : cEbRequete
+		:Verifie()
+		oSql est un cEbSql
+		oSql.AjouteTexte("SELECT COUNT(*) AS ")
+		oSql.AjouteTable("total")
+		:EcritCorps(oSql)
+		RENVOYER oSql.Construit(:oDialecte)
+	FIN
+FIN

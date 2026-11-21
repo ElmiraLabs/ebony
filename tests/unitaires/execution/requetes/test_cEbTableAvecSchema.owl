@@ -1,0 +1,36 @@
+// Tests d'une table avec schéma (« crm.clients ») : le nom est écrit partie par partie (« "crm"."clients" »), jamais comme un seul nom « "crm.clients" » ; l'alias, lui, reste un seul nom. Aucune base.
+
+PROCEDURE EbTestClientsCrm() : cEbTable
+	oTable est un cEbTable("crm.clients")
+	oTable.AjouteColonne("id", "entier", Vrai, Vrai)
+	oTable.AjouteColonne("nom", "texte", Vrai, Faux)
+	RENVOYER oTable
+FIN
+
+// SELECT : la table de FROM et le préfixe de chaque colonne sont écrits avec leur schéma ; l'alias est un seul nom.
+PROCEDURE scenario_select_d_une_table_avec_schema()
+	oBurin   est un cEbBurin   = EbTestBurin()
+	oClients est un cEbTable   = EbTestClientsCrm()
+	oNom     est un cEbColonne = oClients.ColonneNommee("nom")
+	oRequete est un cEbRequete = oBurin.Select().From(oClients).Where(oNom.Eq("Ada")).ToSQL()
+	dbgVérifieEgalité(oRequete.Texte(), `SELECT "crm"."clients"."id" AS "crm.clients__id", "crm"."clients"."nom" AS "crm.clients__nom" FROM "crm"."clients" WHERE "crm"."clients"."nom" = {p1}`, "schéma partie par partie, alias en un seul nom")
+FIN
+
+// INSERT, UPDATE et DELETE : le nom de la table porte son schéma ; les colonnes écrites restent de simples noms.
+PROCEDURE scenario_ecritures_d_une_table_avec_schema()
+	oBurin   est un cEbBurin           = EbTestBurin()
+	oClients est un cEbTable           = EbTestClientsCrm()
+	oId      est un cEbColonne         = oClients.ColonneNommee("id")
+	tabLigne est un tableau associatif
+	tabLigne["nom"] = "Ada"
+	dbgVérifieEgalité(oBurin.Insert(oClients).Values(tabLigne).Returning(oId).ToSQL().Texte(), `INSERT INTO "crm"."clients" ("nom") VALUES ({p1}) RETURNING "id" AS "crm.clients__id"`, "INSERT")
+	dbgVérifieEgalité(oBurin.Update(oClients).Set(tabLigne).Where(oId.Eq(1)).ToSQL().Texte(), `UPDATE "crm"."clients" SET "nom" = {p1} WHERE "crm"."clients"."id" = {p2}`, "UPDATE")
+	dbgVérifieEgalité(oBurin.Del(oClients).Where(oId.Eq(1)).ToSQL().Texte(), `DELETE FROM "crm"."clients" WHERE "crm"."clients"."id" = {p1}`, "DELETE")
+FIN
+
+// Une table sans schéma est écrite comme avant.
+PROCEDURE scenario_table_sans_schema_inchangee()
+	oBurin    est un cEbBurin = EbTestBurin()
+	oProduits est un cEbTable = EbTestProduits()
+	dbgVérifieEgalité(oBurin.Select().From(oProduits).ToSQL().Texte(), EbTestSelectProduits(), "sans schéma")
+FIN

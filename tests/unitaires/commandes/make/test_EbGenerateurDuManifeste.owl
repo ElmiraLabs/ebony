@@ -1,0 +1,46 @@
+// Tests de EbGenerateurDuManifeste : le générateur de valeurs que le manifeste d'un module déclare (classe et graine), et chaque refus (code 22).
+
+// Rend « code|message » si la lecture lève, ou « » si elle réussit.
+PROCEDURE EbTestRefusGenerateur(sTexte est une chaîne) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		sGenerateur est une chaîne = EbGenerateurDuManifeste(sTexte, "ebony/modules/essai.json")
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Sans membre « generateur » : « » ; le défaut de l'outillage est le compteur de Burin.
+PROCEDURE scenario_generateur_absent()
+	dbgVérifieEgalité(EbGenerateurDuManifeste(`{ "nom": "essai" }`, "m.json"), "", "pas de membre generateur")
+	dbgVérifieEgalité(EbGenerateurParDefaut(), "cEbGenerateurCompteur()", "le défaut est le compteur")
+FIN
+
+// Une classe et une graine donnent l'expression qui construit le générateur ; sans graine, un constructeur sans argument.
+PROCEDURE scenario_generateur_avec_et_sans_graine()
+	dbgVérifieEgalité(EbGenerateurDuManifeste(`{ "generateur": { "classe": "cEbGenerateurFigurant", "graine": 42 } }`, "m.json"), "cEbGenerateurFigurant(42)", "classe et graine")
+	dbgVérifieEgalité(EbGenerateurDuManifeste(`{ "generateur": { "classe": "cEbAutre_2" } }`, "m.json"), "cEbAutre_2()", "classe seule : sans argument")
+	dbgVérifieEgalité(EbGenerateurDuManifeste(`{ "generateur": { "classe": "cEbX", "graine": -7 } }`, "m.json"), "cEbX(-7)", "graine négative")
+FIN
+
+// Le nom de la classe finit dans du code : ASCII, lettre en premier ; refus avec le code 22 et le chemin du manifeste.
+PROCEDURE scenario_generateur_classe_refusee()
+	dbgVérifieVrai(EbNomDeClasseAscii("cEbGenerateur_1"), "un nom valide")
+	dbgVérifieFaux(EbNomDeClasseAscii(""), "vide")
+	dbgVérifieFaux(EbNomDeClasseAscii("1classe"), "chiffre en premier")
+	dbgVérifieFaux(EbNomDeClasseAscii("cEb Generateur"), "espace")
+	dbgVérifieFaux(EbNomDeClasseAscii("cEbGénérateur"), "accent")
+	dbgVérifieFaux(EbNomDeClasseAscii("cEb(Generateur"), "parenthèse : du code injecté")
+	sRefus est une chaîne = EbTestRefusGenerateur(`{ "generateur": { "classe": "cEb(); Trace(1)" } }`)
+	dbgVérifieEgalité(Gauche(sRefus, 3), "22|", "code 22")
+	dbgVérifieVrai(Position(sRefus, "ebony/modules/essai.json") > 0, "le message nomme le manifeste")
+	dbgVérifieVrai(Position(EbTestRefusGenerateur(`{ "generateur": { "graine": 42 } }`), "generateur.classe manque") > 0, "classe absente")
+FIN
+
+// Refus : graine qui n'est pas un entier, JSON invalide.
+PROCEDURE scenario_generateur_graine_et_json_refuses()
+	dbgVérifieVrai(Position(EbTestRefusGenerateur(`{ "generateur": { "classe": "cEbX", "graine": "abc" } }`), "n'est pas un entier") > 0, "graine texte")
+	dbgVérifieVrai(Position(EbTestRefusGenerateur(`{ "generateur": { "classe": "cEbX", "graine": 4.5 } }`), "n'est pas un entier") > 0, "graine décimale")
+	dbgVérifieVrai(Position(EbTestRefusGenerateur("pas du json"), "n'est pas du JSON valide") > 0, "JSON invalide")
+FIN

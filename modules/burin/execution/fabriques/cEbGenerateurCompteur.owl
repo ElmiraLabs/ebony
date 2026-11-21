@@ -1,0 +1,68 @@
+// Le générateur de valeurs à COMPTEUR : chaque ligne a un numéro (1, 2, 3…) et les valeurs s'en déduisent par de l'arithmétique d'entiers, donc identiques partout.
+// Pourquoi pas Hasard() : mesuré (OWL 1.8.1), InitHasard() donne la même suite que InitHasard(42) d'un lancement à l'autre, mais Windows rend « 76 1 70 57 84 80 17 45 » et Linux « 52 54 72 36 66 98 83 64 » :
+// un test qui compare des valeurs tirées au hasard ne passerait que sur une plate-forme.
+// Valeurs de la ligne n : texte « <champ> n » (ou « <sorte> n » pour un champ qui a une sorte) ; entier n ; réel n + 0,5 ; booléen vrai pour n impair ; date et date-heure toujours valides (jour de 1 à 28, mois de 1 à 12, à partir de 2026).
+cEbGenerateurCompteur est une Classe implemente iEbGenerateur
+PRIVÉ
+	nLigne est un entier = 0
+
+	// Un nombre sur deux chiffres : 7 donne « 07 ».
+	PROCEDURE PRIVÉE DeuxChiffres(nValeur est un entier) : chaîne
+		SI nValeur < 10 ALORS
+			RENVOYER "0" + nValeur
+		FIN
+		RENVOYER "" + nValeur
+	FIN
+
+	// La date de la ligne : 2026-01-01 pour la ligne 1, puis un jour de plus (28 jours par mois, 12 mois par an : toute date rendue existe).
+	PROCEDURE PRIVÉE DateDeLaLigne() : chaîne
+		nJour  est un entier = 1 + ((:nLigne - 1) MODULO 28)
+		nMois  est un entier = 1 + (PartieEntière((:nLigne - 1) / 28) MODULO 12)
+		nAnnee est un entier = 2026 + PartieEntière((:nLigne - 1) / 336)
+		RENVOYER nAnnee + "-" + :DeuxChiffres(nMois) + "-" + :DeuxChiffres(nJour)
+	FIN
+
+	PROCEDURE PUBLIQUE NouvelleLigne()
+		:nLigne++
+	FIN
+
+	// Le numéro de la ligne en cours (0 avant la première NouvelleLigne).
+	PROCEDURE PUBLIQUE NumeroLigne() : entier
+		RENVOYER :nLigne
+	FIN
+
+	PROCEDURE PUBLIQUE ValeurTexte(sChamp est une chaîne) : chaîne
+		RENVOYER sChamp + " " + :nLigne
+	FIN
+
+	// La sorte donne son nom au texte (« produit 3 ») : le compteur ne sait pas faire plus (un générateur qui sait, comme figurant, choisit une vraie valeur). Sans sorte : comme ValeurTexte.
+	PROCEDURE PUBLIQUE ValeurTexteDeSorte(sSorte est une chaîne, sChamp est une chaîne) : chaîne
+		SI sSorte = "" ALORS
+			RENVOYER :ValeurTexte(sChamp)
+		FIN
+		RENVOYER sSorte + " " + :nLigne
+	FIN
+
+	PROCEDURE PUBLIQUE ValeurEntier() : entier
+		RENVOYER :nLigne
+	FIN
+
+	PROCEDURE PUBLIQUE ValeurReel() : réel
+		rValeur est un réel = :nLigne + 0.5
+		RENVOYER rValeur
+	FIN
+
+	PROCEDURE PUBLIQUE ValeurBooleen() : booléen
+		RENVOYER (:nLigne MODULO 2) = 1
+	FIN
+
+	PROCEDURE PUBLIQUE ValeurDate() : chaîne
+		RENVOYER :DateDeLaLigne()
+	FIN
+
+	PROCEDURE PUBLIQUE ValeurDateHeure() : chaîne
+		nHeure  est un entier = 8 + (:nLigne MODULO 10)
+		nMinute est un entier = (:nLigne * 7) MODULO 60
+		RENVOYER :DateDeLaLigne() + "T" + :DeuxChiffres(nHeure) + ":" + :DeuxChiffres(nMinute) + ":00"
+	FIN
+FIN

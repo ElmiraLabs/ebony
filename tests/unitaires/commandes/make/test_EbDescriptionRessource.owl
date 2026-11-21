@@ -1,0 +1,126 @@
+// Tests de EbDescriptionRessource : le fichier ressource.json qu'écrit « ebony make resource » et sa relecture (champs, table), avec chaque refus nommant le fichier et le champ.
+// Que « make migration » s'en serve sans --champs est testé avec un faux disque dans test_cEbGenerationMake.owl, et avec le vrai owl dans tests/integration/lanceur.ps1 (groupe make).
+
+// La demande lue dans des arguments écrits avec des « ; ».
+PROCEDURE EbTestDemandeDescription(sListe est une chaîne) : cEbDemandeMake
+	tabArgs est un tableau de chaînes
+	nDebut  est un entier             = 1
+	nFin    est un entier             = Position(sListe, ";")
+	TANTQUE nFin > 0
+		TableauAjoute(tabArgs, Milieu(sListe, nDebut, nFin - nDebut))
+		nDebut = nFin + 1
+		nFin   = Position(sListe, ";", nDebut)
+	FIN
+	TableauAjoute(tabArgs, Milieu(sListe, nDebut))
+	oDemande est un cEbDemandeMake = EbAnalyseArgumentsMake(tabArgs)
+	RENVOYER oDemande
+FIN
+
+// Rend « code|message » si la lecture des champs lève, ou « » si elle réussit.
+PROCEDURE EbTestRefusDescription(sTexte est une chaîne) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		tabChamps est un tableau de cEbChampTable = EbChampsDeDescription(sTexte, "app/domaine/client/ressource.json")
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Le chemin : sous app/domaine, dans le dossier de la ressource, à côté de l'entité.
+PROCEDURE scenario_chemin_de_la_description()
+	dbgVérifieEgalité(EbCheminDescription(EbTestDemandeDescription("resource;Bon de commande;--champs;id:entier*,nom:texte")), "app/domaine/bon-de-commande/ressource.json", "chemin")
+FIN
+
+// Le contenu est du JSON valide, en LF, avec le nom tel qu'écrit, la table, et un objet par champ ; seuls les membres qui valent quelque chose sont écrits.
+PROCEDURE scenario_contenu_de_la_description()
+	oDemande est un cEbDemandeMake = EbTestDemandeDescription("resource;Client;--champs;id:entier*,nom:texte,email:texte?,pays_id:entier@pays.code")
+	sContenu est une chaîne        = EbContenuDescription(oDemande)
+	dbgVérifieVrai(JSONValide(sContenu), "JSON valide")
+	dbgVérifieEgalité(Position(sContenu, Caract(13)), 0, "pas de retour chariot")
+	dbgVérifieEgalité(Droite(sContenu, 1), Caract(10), "saut de ligne final")
+	j est un JSON
+	j = ChaîneVersJSON(sContenu)
+	dbgVérifieEgalité(j["ressource"], "Client", "ressource")
+	dbgVérifieEgalité(j["table"], "clients", "table")
+	dbgVérifieVrai(Position(sContenu, `{ "nom": "id", "type": "entier", "cle": true },`) > 0, "la clé porte cle")
+	dbgVérifieVrai(Position(sContenu, `{ "nom": "nom", "type": "texte" },`) > 0, "un champ simple n'écrit ni cle ni nullable")
+	dbgVérifieVrai(Position(sContenu, `{ "nom": "email", "type": "texte", "nullable": true },`) > 0, "nullable")
+	dbgVérifieVrai(Position(sContenu, `{ "nom": "pays_id", "type": "entier", "reference": { "table": "pays", "colonne": "code" } }`) > 0, "référence, dernier champ sans virgule")
+FIN
+
+// Le nom de la ressource et les noms de colonne sont des données : un guillemet est échappé, jamais un identifiant.
+PROCEDURE scenario_contenu_echappe_les_noms()
+	oDemande est un cEbDemandeMake = EbTestDemandeDescription("resource;Café de la Gare;--champs;id:entier*,date naissance:date?")
+	sContenu est une chaîne        = EbContenuDescription(oDemande)
+	dbgVérifieVrai(JSONValide(sContenu), "JSON valide")
+	j est un JSON
+	j = ChaîneVersJSON(sContenu)
+	dbgVérifieEgalité(j["ressource"], "Café de la Gare", "le nom reste tel qu'écrit, accents et espaces compris")
+	dbgVérifieVrai(Position(sContenu, `"nom": "date naissance"`) > 0, "la colonne garde son espace")
+FIN
+
+// Ce qui est écrit est relu : les mêmes champs reviennent, dans l'ordre, avec leurs marqueurs et leurs identifiants.
+PROCEDURE scenario_relecture_donne_les_memes_champs()
+	oDemande   est un cEbDemandeMake           = EbTestDemandeDescription("resource;Client;--champs;id:entier*,nom:texte,email:texte?,actif:booleen,note:reel,date_naissance:date?,pays_id:entier@pays.code")
+	tabLus     est un tableau de cEbChampTable = EbChampsDeDescription(EbContenuDescription(oDemande), "ressource.json")
+	tabAttendu est un tableau de cEbChampTable = oDemande.Champs()
+	dbgVérifieEgalité(tabLus..Occurrence, tabAttendu..Occurrence, "même nombre de champs")
+	POUR i = 1 À tabAttendu..Occurrence
+		dbgVérifieEgalité(tabLus[i].NomColonne(), tabAttendu[i].NomColonne(), "colonne " + i)
+		dbgVérifieEgalité(tabLus[i].TypeChamp(), tabAttendu[i].TypeChamp(), "type " + i)
+		dbgVérifieEgalité(tabLus[i].Cle(), tabAttendu[i].Cle(), "clé " + i)
+		dbgVérifieEgalité(tabLus[i].Nullable(), tabAttendu[i].Nullable(), "nullable " + i)
+		dbgVérifieEgalité(tabLus[i].RefTable(), tabAttendu[i].RefTable(), "table référencée " + i)
+		dbgVérifieEgalité(tabLus[i].RefColonne(), tabAttendu[i].RefColonne(), "colonne référencée " + i)
+		dbgVérifieEgalité(tabLus[i].Mot(), tabAttendu[i].Mot(), "mots " + i)
+		dbgVérifieEgalité(tabLus[i].Slug(), tabAttendu[i].Slug(), "slug " + i)
+	FIN
+FIN
+
+// La table d'une description se lit sans lever : « » pour tout ce qui n'est pas une description exploitable (sert à chercher parmi plusieurs fichiers).
+PROCEDURE scenario_table_de_la_description()
+	dbgVérifieEgalité(EbTableDeDescription(`{ "ressource": "Client", "table": "crm.clients", "champs": [] }`), "crm.clients", "table avec schéma")
+	dbgVérifieEgalité(EbTableDeDescription("pas du json"), "", "pas du JSON")
+	dbgVérifieEgalité(EbTableDeDescription(`{ "champs": [] }`), "", "sans table")
+	dbgVérifieEgalité(EbTableDeDescription(`{ "table": 5 }`), "", "table qui n'est pas un texte")
+	dbgVérifieEgalité(EbTableDeDescription(""), "", "fichier vide")
+FIN
+
+// Chaque description incorrecte est un code 25 qui nomme le fichier, et le champ quand il y en a un.
+PROCEDURE scenario_refus_de_la_description()
+	dbgVérifieEgalité(Gauche(EbTestRefusDescription("pas du json"), 3), "25|", "pas du JSON : code 25")
+	dbgVérifieVrai(Position(EbTestRefusDescription("pas du json"), "app/domaine/client/ressource.json n'est pas du JSON valide") > 0, "nomme le fichier")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "table": "clients" }`), "il manque « champs »") > 0, "champs absent")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "champs": [ 5 ] }`), "champs[1] doit être un objet") > 0, "un champ qui n'est pas un objet")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "champs": [ { "type": "entier", "cle": true } ] }`), "champs[1] : il manque « nom »") > 0, "nom absent")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "champs": [ { "nom": "id" } ] }`), "le champ « id » : il manque « type »") > 0, "type absent")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "champs": [ { "nom": "id", "type": "uuid" } ] }`), "type inconnu « uuid »") > 0, "type inconnu")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "champs": [ { "nom": "id", "type": "entier", "cle": "oui" } ] }`), "« cle » doit valoir true ou false") > 0, "cle qui n'est pas un booléen")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "champs": [ { "nom": "id", "type": "entier", "cle": true, "nullable": true } ] }`), "ne peut pas accepter NULL") > 0, "clé nullable")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "champs": [ { "nom": "a%b", "type": "texte" } ] }`), "contient un caractère refusé") > 0, "un nom de colonne que le SQL refuse")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "champs": [ { "nom": "id", "type": "entier", "cle": true }, { "nom": "pays", "type": "entier", "reference": { "table": "pays" } } ] }`), "il manque « colonne »") > 0, "référence sans colonne")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "champs": [ { "nom": "nom", "type": "texte" } ] }`), "il faut une clé primaire. Mettez « cle » : true") > 0, "aucune clé : l'aide parle de « cle », pas de *")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "champs": [ { "nom": "id", "type": "entier", "cle": true } ] }`), "il faut au moins un champ en plus de la clé") > 0, "la clé seule")
+	dbgVérifieVrai(Position(EbTestRefusDescription(`{ "champs": [ { "nom": "id", "type": "entier", "cle": true }, { "nom": "Prénom", "type": "texte" }, { "nom": "prenom", "type": "texte" } ] }`), "donneraient le même identifiant") > 0, "deux colonnes, un identifiant")
+	dbgVérifieEgalité(EbTestRefusDescription(`{ "champs": [ { "nom": "id", "type": "Entier", "cle": true }, { "nom": "nom", "type": "texte", "regles": { "longueurMax": 60 } } ] }`), "", "un type en majuscule et un membre inconnu (regles) sont acceptés")
+FIN
+
+// La sorte s'écrit dans ressource.json (membre « sorte », seulement s'il y en a une) et se relit ; une sorte inconnue ou sur un champ qui n'est pas du texte est refusée en nommant le fichier et le champ.
+PROCEDURE scenario_sorte_ecrite_et_relue()
+	oDemande est un cEbDemandeMake = EbTestDemandeDescription("resource;Produit;--champs;id:entier*,nom:texte~produit,note:texte")
+	sTexte   est une chaîne        = EbContenuDescription(oDemande)
+	dbgVérifieVrai(JSONValide(sTexte), "du JSON valide")
+	dbgVérifieVrai(Position(sTexte, Caract(34) + "sorte" + Caract(34) + ": " + Caract(34) + "produit" + Caract(34)) > 0, "le membre sorte est écrit")
+	dbgVérifieEgalité(Position(sTexte, "sorte", Position(sTexte, "sorte") + 1), 0, "une seule sorte : celle du champ nom")
+	tabChamps est un tableau de cEbChampTable = EbChampsDeDescription(sTexte, "app/domaine/produit/ressource.json")
+	dbgVérifieEgalité(tabChamps[2].Sorte(), "produit", "relue")
+	dbgVérifieEgalité(tabChamps[3].Sorte(), "", "un champ sans sorte n'en a pas")
+FIN
+
+PROCEDURE scenario_sorte_refusee_dans_la_description()
+	sInconnue est une chaîne = EbTestRefusDescription(`{ "ressource": "P", "table": "ps", "champs": [ { "nom": "id", "type": "entier", "cle": true }, { "nom": "nom", "type": "texte", "sorte": "inventee" } ] }`)
+	dbgVérifieVrai(Position(sInconnue, "sorte inconnue") > 0 ET Position(sInconnue, "nom") > 0 ET Position(sInconnue, "ressource.json") > 0, "sorte inconnue : le fichier et le champ sont nommés")
+	sEntier est une chaîne = EbTestRefusDescription(`{ "ressource": "P", "table": "ps", "champs": [ { "nom": "id", "type": "entier", "cle": true }, { "nom": "age", "type": "entier", "sorte": "produit" } ] }`)
+	dbgVérifieVrai(Position(sEntier, "ne s'applique qu'à un champ de type texte") > 0, "sorte sur un entier")
+FIN

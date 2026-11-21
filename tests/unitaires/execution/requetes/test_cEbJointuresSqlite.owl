@@ -1,0 +1,106 @@
+// Tests des jointures et du comptage de Burin contre une VRAIE base SQLite en mémoire : le texte et les paramètres de ToSQL() et de ToSQLCount() sont acceptés par iEbConnexionSql.Envoie, les deux colonnes « nom »
+// arrivent sous leurs alias sans se perdre, une jointure interne écarte les lignes sans correspondance, une jointure gauche les garde avec NULL, et COUNT compte les lignes de la jointure.
+
+PROCEDURE EbTestConnexionJointures() : cEbConnexionSqlReelle
+	cnx est une sqlConnexion
+	cnx..Provider = sqlSqlite
+	cnx..Source   = ":memory:"
+	oConnexion est un cEbConnexionSqlReelle(cnx, "SELECT 1")
+	oConnexion.Ouvre()
+	RENVOYER oConnexion
+FIN
+
+gConnexionJointures est un cEbConnexionSqlReelle = EbTestConnexionJointures()
+
+// La base : deux catégories (livres, jeux) et trois articles : deux dans « livres », un sans catégorie.
+PROCEDURE avantChaqueTest()
+	gConnexionJointures = EbTestConnexionJointures()
+	tabAucun est un tableau associatif
+	gConnexionJointures.Envoie("CREATE TABLE categories (id INTEGER NOT NULL PRIMARY KEY, nom TEXT NOT NULL)", tabAucun)
+	gConnexionJointures.Envoie("CREATE TABLE articles (id INTEGER NOT NULL PRIMARY KEY, nom TEXT NOT NULL, categorie_id INTEGER)", tabAucun)
+	gConnexionJointures.Envoie("INSERT INTO categories (id, nom) VALUES (1, 'livres'), (2, 'jeux')", tabAucun)
+	gConnexionJointures.Envoie("INSERT INTO articles (id, nom, categorie_id) VALUES (10, 'roman', 1), (11, 'atlas', 1), (12, 'orphelin', NULL)", tabAucun)
+FIN
+
+PROCEDURE apresChaqueTest()
+	gConnexionJointures.Ferme()
+FIN
+
+// Envoie la requête construite et rend le résultat : texte et paramètres, tels que ToSQL() ou ToSQLCount() les donnent.
+PROCEDURE EbTestEnvoieJointure(oRequete est un cEbRequete) : cEbResultatSql
+	oResultat est un cEbResultatSql = gConnexionJointures.Envoie(oRequete.Texte(), oRequete.Parametres())
+	dbgVérifieVrai(oResultat.Succes(), "la base accepte la requête : " + oResultat.Message() + " (" + oRequete.Texte() + ")")
+	RENVOYER oResultat
+FIN
+
+// Les couples « article/catégorie » des lignes rendues, dans l'ordre, séparés par « , » : le nom de la catégorie est « - » quand la jointure gauche n'a rien trouvé (NULL).
+PROCEDURE EbTestCouples(oResultat est un cEbResultatSql) : chaîne
+	sCouples est une chaîne = ""
+	POUR TOUT ligne DE oResultat.Lignes()
+		sCategorie est une chaîne = "-"
+		SI TypeVar(ligne["categories__nom"]) <> 0 ALORS
+			sCategorie = ligne["categories__nom"]
+		FIN
+		sCouples += EbSeparateurSql(sCouples) + ligne["articles__nom"] + "/" + sCategorie
+	FIN
+	RENVOYER sCouples
+FIN
+
+// Jointure interne : les deux « nom » arrivent sous leurs alias, l'article sans catégorie est écarté.
+PROCEDURE scenario_inner_join_sur_sqlite()
+	oBurin      est un cEbBurin       = EbTestBurin()
+	oArticles   est un cEbTable       = EbTestArticles()
+	oCategories est un cEbTable       = EbTestCategories()
+	oCle        est un cEbColonne     = oArticles.ColonneNommee("categorie_id")
+	oId         est un cEbColonne     = oCategories.ColonneNommee("id")
+	oNomArt     est un cEbColonne     = oArticles.ColonneNommee("nom")
+	oResultat   est un cEbResultatSql = EbTestEnvoieJointure(oBurin.Select().From(oArticles).InnerJoin(oCategories, oCle.EqCol(oId)).OrderBy(oNomArt.Asc()).ToSQL())
+	dbgVérifieEgalité(oResultat.NbLignes(), 2, "deux articles ont une catégorie")
+	dbgVérifieEgalité(EbTestCouples(oResultat), "atlas/livres, roman/livres", "les deux « nom » sont distincts")
+FIN
+
+// Jointure gauche : l'article sans catégorie reste, ses colonnes de catégorie sont NULL.
+PROCEDURE scenario_left_join_sur_sqlite()
+	oBurin      est un cEbBurin       = EbTestBurin()
+	oArticles   est un cEbTable       = EbTestArticles()
+	oCategories est un cEbTable       = EbTestCategories()
+	oCle        est un cEbColonne     = oArticles.ColonneNommee("categorie_id")
+	oId         est un cEbColonne     = oCategories.ColonneNommee("id")
+	oNomArt     est un cEbColonne     = oArticles.ColonneNommee("nom")
+	oResultat   est un cEbResultatSql = EbTestEnvoieJointure(oBurin.Select().From(oArticles).LeftJoin(oCategories, oCle.EqCol(oId)).OrderBy(oNomArt.Asc()).ToSQL())
+	dbgVérifieEgalité(oResultat.NbLignes(), 3, "les trois articles")
+	dbgVérifieEgalité(EbTestCouples(oResultat), "atlas/livres, orphelin/-, roman/livres", "l'orphelin a une catégorie NULL")
+FIN
+
+// Une condition sur la table jointe (valeur en paramètre) filtre les lignes de la jointure.
+PROCEDURE scenario_join_avec_condition_sur_la_table_jointee()
+	oBurin      est un cEbBurin       = EbTestBurin()
+	oArticles   est un cEbTable       = EbTestArticles()
+	oCategories est un cEbTable       = EbTestCategories()
+	oCle        est un cEbColonne     = oArticles.ColonneNommee("categorie_id")
+	oId         est un cEbColonne     = oCategories.ColonneNommee("id")
+	oNomCat     est un cEbColonne     = oCategories.ColonneNommee("nom")
+	oResultat   est un cEbResultatSql = EbTestEnvoieJointure(oBurin.Select().From(oArticles).InnerJoin(oCategories, oCle.EqCol(oId)).Where(oNomCat.Eq("jeux")).ToSQL())
+	dbgVérifieEgalité(oResultat.NbLignes(), 0, "aucun article dans « jeux »")
+	oLivres est un cEbResultatSql = EbTestEnvoieJointure(oBurin.Select().From(oArticles).InnerJoin(oCategories, oCle.EqCol(oId)).Where(oNomCat.Eq("livres")).ToSQL())
+	dbgVérifieEgalité(oLivres.NbLignes(), 2, "deux articles dans « livres »")
+FIN
+
+// COUNT : une ligne, une colonne « total » ; il compte les lignes de la jointure (pas celles de la page), et ignore ordre et limite.
+PROCEDURE scenario_count_sur_sqlite()
+	oBurin      est un cEbBurin           = EbTestBurin()
+	oArticles   est un cEbTable           = EbTestArticles()
+	oCategories est un cEbTable           = EbTestCategories()
+	oCle        est un cEbColonne         = oArticles.ColonneNommee("categorie_id")
+	oId         est un cEbColonne         = oCategories.ColonneNommee("id")
+	oNomArt     est un cEbColonne         = oArticles.ColonneNommee("nom")
+	oTous       est un cEbResultatSql     = EbTestEnvoieJointure(oBurin.Select().From(oArticles).ToSQLCount())
+	tabTous     est un tableau associatif = oTous.Lignes()[1]
+	dbgVérifieEgalité(tabTous["total"], 3, "trois articles")
+	oInterne   est un cEbResultatSql     = EbTestEnvoieJointure(oBurin.Select().From(oArticles).InnerJoin(oCategories, oCle.EqCol(oId)).OrderBy(oNomArt.Asc()).Limit(1).ToSQLCount())
+	tabInterne est un tableau associatif = oInterne.Lignes()[1]
+	dbgVérifieEgalité(tabInterne["total"], 2, "deux lignes dans la jointure interne, la limite ne compte pas")
+	oFiltre   est un cEbResultatSql     = EbTestEnvoieJointure(oBurin.Select().From(oArticles).Where(oNomArt.Like("r%")).ToSQLCount())
+	tabFiltre est un tableau associatif = oFiltre.Lignes()[1]
+	dbgVérifieEgalité(tabFiltre["total"], 1, "un seul article commence par « r »")
+FIN

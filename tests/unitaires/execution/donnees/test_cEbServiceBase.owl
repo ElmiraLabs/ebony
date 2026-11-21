@@ -1,0 +1,75 @@
+// Tests de cEbServiceBase : la fabrique du composant « base » (une instance) et le point où les routes retrouvent la base (membres GLOBAL de la classe). SQLite en mémoire, journal et configuration fictifs.
+// Non testé ici : le partage de l'état entre FinInitialisation et les requêtes sous « owl serve » (vérifié sur un vrai service lancé, comme pour cEbServiceApplication).
+
+// Un environnement dont la base SQLite est en mémoire.
+PROCEDURE EbTestEnvServiceBase() : cEbEnv
+	oLecture est un cEbLectureEnvFictive
+	oLecture.AjouteFichier("config/env.json", `{"variables":[{"cle":"DB_FICHIER","type":"chemin","defaut":":memory:"}]}`)
+	oEnv est un cEbEnv(oLecture)
+	oEnv.Charge("config/env.json", ".env", ".env.secrets")
+	RENVOYER oEnv
+FIN
+
+// Cree() rend le composant « base » : il se nomme « base », et la base partagée est posée pour les routes.
+PROCEDURE scenario_cree_le_composant_base_et_pose_la_base()
+	oSortie    est un cEbSortieJournalFictive
+	oHorloge   est un cEbHorlogeFictive
+	oJournal   est un cEbJournal(oSortie, oHorloge, "info")
+	oEnv       est un cEbEnv                                = EbTestEnvServiceBase()
+	oFabrique  est un cEbServiceBase("sqlite")
+	oComposant est un iEbComposant                          = oFabrique.Cree(oEnv, oJournal)
+	dbgVérifieEgalité(oComposant.Nom(), "base", "le composant se nomme base")
+	dbgVérifieVrai(cEbServiceBase.EstDefinie(), "une base est posée")
+	oComposant.Ouvre()
+	tabAucun est un tableau associatif
+	dbgVérifieVrai(cEbServiceBase.Base().Execute("SELECT 1", tabAucun).Succes(), "la base posée répond")
+	dbgVérifieVrai(oComposant.Repond(), "le composant répond")
+	oComposant.Ferme()
+FIN
+
+// Créer le composant n'ouvre pas la base : c'est cEbApplication qui l'ouvre. Rien n'est journalisé à la création.
+PROCEDURE scenario_cree_n_ouvre_pas_la_base()
+	oSortie    est un cEbSortieJournalFictive
+	oHorloge   est un cEbHorlogeFictive
+	oJournal   est un cEbJournal(oSortie, oHorloge, "info")
+	oEnv       est un cEbEnv                                = EbTestEnvServiceBase()
+	oFabrique  est un cEbServiceBase("sqlite")
+	oComposant est un iEbComposant                          = oFabrique.Cree(oEnv, oJournal)
+	dbgVérifieEgalité(oSortie.NbLignes(), 0, "rien d'ouvert, rien de journalisé")
+	oComposant.Ferme()
+FIN
+
+// Burin() rend le constructeur de requêtes avec le dialecte du fournisseur du projet : ici SQLite, que la requête construite sait écrire et que la base posée accepte.
+PROCEDURE scenario_burin_a_le_dialecte_du_fournisseur()
+	oSortie    est un cEbSortieJournalFictive
+	oHorloge   est un cEbHorlogeFictive
+	oJournal   est un cEbJournal(oSortie, oHorloge, "info")
+	oEnv       est un cEbEnv                                = EbTestEnvServiceBase()
+	oFabrique  est un cEbServiceBase("sqlite")
+	oComposant est un iEbComposant                          = oFabrique.Cree(oEnv, oJournal)
+	oComposant.Ouvre()
+	oBurin est un cEbBurin          = cEbServiceBase.Burin()
+	oTable est un cEbTable("essai")
+	oTable.AjouteColonne("id", "entier", Vrai, Vrai)
+	oRequete est un cEbRequete = oBurin.Select().From(oTable).Offset(2).ToSQL()
+	dbgVérifieEgalité(oRequete.Texte(), `SELECT "essai"."id" AS "essai__id" FROM "essai" LIMIT -1 OFFSET 2`, "le dialecte SQLite : LIMIT -1 pour un décalage seul")
+	oComposant.Ferme()
+FIN
+
+// Le dialecte se choisit d'après le fournisseur : sqlite et postgresql en ont un, hfsql non (7011, un refus clair et non un SQL faux).
+PROCEDURE scenario_dialecte_de_chaque_fournisseur()
+	dbgVérifieVrai(EbDialecteExiste("sqlite"), "sqlite")
+	dbgVérifieVrai(EbDialecteExiste("postgresql"), "postgresql")
+	dbgVérifieFaux(EbDialecteExiste("hfsql"), "hfsql n'a pas de dialecte")
+	oPostgres est un iEbDialecteSql = EbDialecteDeBase("postgresql")
+	dbgVérifieEgalité(oPostgres.LimiteDecalage(-1, 4), " OFFSET 4", "le dialecte rendu est celui de PostgreSQL")
+	oSqlite est un iEbDialecteSql = EbDialecteDeBase("sqlite")
+	dbgVérifieEgalité(oSqlite.LimiteDecalage(-1, 4), " LIMIT -1 OFFSET 4", "le dialecte rendu est celui de SQLite")
+	sCode est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oAucun est un iEbDialecteSql = EbDialecteDeBase("hfsql")
+	FAIRE
+		sCode = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sCode, "7011", "hfsql : refusé avec 7011")
+FIN

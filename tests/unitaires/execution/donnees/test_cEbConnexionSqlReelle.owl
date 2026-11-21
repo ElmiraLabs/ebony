@@ -1,0 +1,233 @@
+// Tests de cEbConnexionSqlReelle avec les VRAIS connecteurs SQL d'OWL : SQLite en mémoire pour l'échec « doux » d'une connexion cassée et sa reprise,
+// PostgreSQL sur un port fermé pour l'indisponibilité. Ce qu'une base fictive ne prouve pas : OWL ne lève rien (Succès faux), et ErreurInfo() n'est pas effacée après un succès.
+// Non testé ici : un vrai redémarrage de PostgreSQL (il faut une instance ; l'arrêt est simulé par Ferme() sur SQLite, qui produit le même échec « doux »).
+
+PROCEDURE EbTestVide() : tableau associatif
+	tabParametres est un tableau associatif
+	RENVOYER tabParametres
+FIN
+
+PROCEDURE EbTestSqlite() : cEbConnexionSqlReelle
+	cnx est une sqlConnexion
+	cnx..Provider = sqlSqlite
+	cnx..Source   = ":memory:"
+	oSqlite est un cEbConnexionSqlReelle(cnx, "SELECT 1")
+	RENVOYER oSqlite
+FIN
+
+PROCEDURE EbTestPostgresInjoignable() : cEbConnexionSqlReelle
+	cnx est une sqlConnexion
+	cnx..Provider      = sqlPostgres
+	cnx..Serveur       = "127.0.0.1:1"
+	cnx..BaseDeDonnées = "x"
+	cnx..Utilisateur   = "u"
+	cnx..MotDePasse    = "p"
+	oInjoignable est un cEbConnexionSqlReelle(cnx, "SELECT 1")
+	RENVOYER oInjoignable
+FIN
+
+// La connexion SQLite en mémoire du scénario en cours : neuve et fermée avant chaque scénario, et FERMÉE après chacun (même si le scénario a échoué en route).
+gReelle est un cEbConnexionSqlReelle = EbTestSqlite()
+
+// Fixture : une connexion SQLite neuve, pas encore ouverte.
+PROCEDURE avantChaqueTest()
+	gReelle = EbTestSqlite()
+FIN
+
+// Fixture : ferme la connexion du scénario. Ferme() ne lève rien sur une connexion jamais ouverte ou déjà fermée (mesuré, owl 1.6.0).
+PROCEDURE apresChaqueTest()
+	gReelle.Ferme()
+FIN
+
+// Une requête paramétrée rend ses lignes typées ; les valeurs passent par les paramètres, jamais dans le texte SQL.
+PROCEDURE scenario_requete_parametree()
+	dbgVérifieVrai(gReelle.Ouvre(), "ouverture")
+	tabParametres est un tableau associatif
+	tabParametres["a"] = 7
+	oRes est un cEbResultatSql = gReelle.Envoie("SELECT {a} AS n", tabParametres)
+	dbgVérifieVrai(oRes.Succes(), "succès")
+	dbgVérifieEgalité(oRes.NbLignes(), 1, "une ligne")
+	dbgVérifieEgalité(oRes.Lignes()[1]["n"], 7, "valeur liée, rendue comme entier")
+FIN
+
+// Écriture, lecture, lignes affectées.
+PROCEDURE scenario_ecriture_et_lecture()
+	gReelle.Ouvre()
+	dbgVérifieVrai(gReelle.Envoie("CREATE TABLE t (id INTEGER)", EbTestVide()).Succes(), "création de la table")
+	tabParametres est un tableau associatif
+	tabParametres["v"] = 5
+	oEcrit est un cEbResultatSql = gReelle.Envoie("INSERT INTO t (id) VALUES ({v})", tabParametres)
+	dbgVérifieVrai(oEcrit.Succes(), "insertion")
+	dbgVérifieEgalité(oEcrit.LignesAffectees(), 1, "une ligne affectée")
+	oLu est un cEbResultatSql = gReelle.Envoie("SELECT id FROM t", EbTestVide())
+	dbgVérifieEgalité(oLu.NbLignes(), 1, "une ligne lue")
+	dbgVérifieEgalité(oLu.Lignes()[1]["id"], 5, "la valeur écrite")
+FIN
+
+// Une requête fausse : échec « doux » avec le message d'OWL ; la sonde dit que la connexion, elle, est saine.
+PROCEDURE scenario_requete_fausse()
+	gReelle.Ouvre()
+	oRes est un cEbResultatSql = gReelle.Envoie("SELEKT 1", EbTestVide())
+	dbgVérifieFaux(oRes.Succes(), "échec")
+	dbgVérifieVrai(Taille(oRes.Message()) > 0, "un message : " + oRes.Message())
+	dbgVérifieEgalité(gReelle.DernierMessage(), oRes.Message(), "DernierMessage() le garde")
+	dbgVérifieVrai(gReelle.Sonde(), "la connexion répond encore : la sonde tranche pour « la requête est fausse »")
+FIN
+
+// ErreurInfo() n'est pas effacée par OWL après un succès (mesuré) : l'adaptateur, lui, ne la relit que sur échec et efface son message sur succès.
+PROCEDURE scenario_pas_de_message_perime()
+	gReelle.Ouvre()
+	gReelle.Envoie("SELEKT 1", EbTestVide())
+	dbgVérifieVrai(Taille(gReelle.DernierMessage()) > 0, "après l'échec : un message")
+	oBon est un cEbResultatSql = gReelle.Envoie("SELECT 1", EbTestVide())
+	dbgVérifieVrai(oBon.Succes(), "requête saine")
+	dbgVérifieEgalité(oBon.Message(), "", "le résultat n'emporte pas l'ancien message")
+	dbgVérifieEgalité(gReelle.DernierMessage(), "", "DernierMessage() est effacé par le succès")
+FIN
+
+// La connexion cassée (Ferme() simule l'arrêt de la base) : OWL ne lève rien, la requête échoue « en douceur », la sonde le dit.
+PROCEDURE scenario_connexion_cassee_echec_doux()
+	gReelle.Ouvre()
+	gReelle.Ferme()
+	oRes est un cEbResultatSql = gReelle.Envoie("SELECT 1", EbTestVide())
+	dbgVérifieFaux(oRes.Succes(), "échec sans exception")
+	dbgVérifieFaux(gReelle.Sonde(), "la sonde dit : connexion perdue")
+FIN
+
+// LE test « la base redémarre » avec les vrais connecteurs : la connexion partagée casse, la requête suivante la rétablit et aboutit.
+PROCEDURE scenario_la_base_redemarre_sur_sqlite()
+	oBase est un cEbBaseResiliente(gReelle)
+	dbgVérifieVrai(oBase.Ouvre(), "ouverture au démarrage")
+	dbgVérifieVrai(oBase.Execute("SELECT 1 AS n", EbTestVide()).Succes(), "avant la panne")
+	gReelle.Ferme()
+	oRes est un cEbResultatSql = oBase.Execute("SELECT 1 AS n", EbTestVide())
+	dbgVérifieVrai(oRes.Succes(), "la requête aboutit après la panne")
+	dbgVérifieVrai(oRes.Reconnecte(), "par une reconnexion")
+	dbgVérifieEgalité(oRes.Lignes()[1]["n"], 1, "avec sa ligne (et non 0 ligne)")
+FIN
+
+// Une fois la connexion rétablie, la requête d'après n'a plus rien à rétablir.
+PROCEDURE scenario_apres_la_reconnexion_rien_a_retablir()
+	oBase est un cEbBaseResiliente(gReelle)
+	oBase.Ouvre()
+	gReelle.Ferme()
+	oBase.Execute("SELECT 1 AS n", EbTestVide())
+	oSuivante est un cEbResultatSql = oBase.Execute("SELECT 1 AS n", EbTestVide())
+	dbgVérifieVrai(oSuivante.Succes(), "la suivante aboutit")
+	dbgVérifieFaux(oSuivante.Reconnecte(), "sans reconnexion")
+FIN
+
+// Une requête fausse sur une connexion saine n'est pas prise pour une panne : pas de reconnexion.
+PROCEDURE scenario_requete_fausse_pas_de_reconnexion()
+	oBase est un cEbBaseResiliente(gReelle)
+	oBase.Ouvre()
+	oRes est un cEbResultatSql = oBase.Execute("SELEKT 1", EbTestVide())
+	dbgVérifieFaux(oRes.Succes(), "échec")
+	dbgVérifieFaux(oRes.Indisponible(), "pas indisponible")
+	dbgVérifieFaux(oRes.Reconnecte(), "pas de reconnexion")
+FIN
+
+// PostgreSQL injoignable (port fermé) : Ouvre() rend Faux sans lever, avec la cause d'OWL.
+PROCEDURE scenario_postgres_injoignable_ouverture()
+	oInjoignable est un cEbConnexionSqlReelle = EbTestPostgresInjoignable()
+	dbgVérifieFaux(oInjoignable.Ouvre(), "ouverture impossible, sans exception")
+	dbgVérifieVrai(Position(oInjoignable.DernierMessage(), "injoignable") > 0, "la cause d'OWL : " + oInjoignable.DernierMessage())
+FIN
+
+// PostgreSQL injoignable (port fermé) : la base résiliente démarre quand même, puis rend « indisponible » (503) et ne plante pas.
+PROCEDURE scenario_postgres_injoignable_indisponible()
+	oBase est un cEbBaseResiliente(EbTestPostgresInjoignable())
+	dbgVérifieFaux(oBase.Ouvre(), "au démarrage : Faux, l'application démarre quand même")
+	oRes est un cEbResultatSql = oBase.Execute("SELECT 1", EbTestVide())
+	dbgVérifieFaux(oRes.Succes(), "pas de succès")
+	dbgVérifieVrai(oRes.Indisponible(), "indisponible : le service répond 503")
+	dbgVérifieVrai(Position(oRes.Message(), "Base injoignable") > 0, "avec la cause : " + oRes.Message())
+FIN
+
+// Le fournisseur se lit dans le connecteur de la sqlConnexion : « sqlite » pour SQLite, « postgresql » pour PostgreSQL (la base n'a pas à être joignable pour le savoir), et c'est lui que la base résiliente donne à Burin pour choisir le dialecte.
+PROCEDURE scenario_fournisseur_et_dialecte_de_burin()
+	oSqlite   est un cEbConnexionSqlReelle = EbTestSqlite()
+	oPostgres est un cEbConnexionSqlReelle = EbTestPostgresInjoignable()
+	dbgVérifieEgalité(oSqlite.Fournisseur(), "sqlite", "SQLite")
+	dbgVérifieEgalité(oPostgres.Fournisseur(), "postgresql", "PostgreSQL")
+	oBaseSqlite   est un cEbBaseResiliente = cEbBaseResiliente(oSqlite)
+	oBasePostgres est un cEbBaseResiliente = cEbBaseResiliente(oPostgres)
+	oTable        est un cEbTable("essai")
+	oTable.AjouteColonne("id", "entier", Vrai, Vrai)
+	dbgVérifieEgalité(oBaseSqlite.Burin().Select().From(oTable).Offset(2).ToSQL().Texte(), `SELECT "essai"."id" AS "essai__id" FROM "essai" LIMIT -1 OFFSET 2`, "Burin de la base SQLite : le dialecte SQLite")
+	dbgVérifieEgalité(oBasePostgres.Burin().Select().From(oTable).Offset(2).ToSQL().Texte(), `SELECT "essai"."id" AS "essai__id" FROM "essai" OFFSET 2`, "Burin de la base PostgreSQL : le dialecte PostgreSQL")
+FIN
+
+// Deux tables liées par une clé étrangère (« villes.pays_code » vise « pays.code »), dans la base de la connexion donnée.
+PROCEDURE EbTestSchemaCles(oConnexion est un cEbConnexionSqlReelle)
+	oConnexion.Envoie("CREATE TABLE pays (code TEXT PRIMARY KEY, nom TEXT NOT NULL)", EbTestVide())
+	oConnexion.Envoie("CREATE TABLE villes (id INTEGER PRIMARY KEY AUTOINCREMENT, nom TEXT NOT NULL, pays_code TEXT NOT NULL REFERENCES pays (code))", EbTestVide())
+FIN
+
+// Sans rien demander, SQLite ne vérifie PAS les clés étrangères (réglage éteint par défaut, par connexion) : une ville d'un pays qui n'existe pas est acceptée.
+PROCEDURE scenario_sqlite_sans_verification_des_cles()
+	dbgVérifieVrai(gReelle.Ouvre(), "ouverture")
+	EbTestSchemaCles(gReelle)
+	oOrpheline est un cEbResultatSql = gReelle.Envoie("INSERT INTO villes (nom, pays_code) VALUES ('Orpheline', 'XX')", EbTestVide())
+	dbgVérifieVrai(oOrpheline.Succes(), "la ligne orpheline est acceptée : c'est la limite que ExigeClesEtrangeres() lève")
+FIN
+
+// Avec ExigeClesEtrangeres(), SQLite refuse une ligne qui vise une ligne absente et la suppression d'une ligne encore visée, et accepte une ligne valide.
+PROCEDURE scenario_sqlite_verifie_les_cles_etrangeres()
+	gReelle.ExigeClesEtrangeres()
+	dbgVérifieVrai(gReelle.Ouvre(), "ouverture")
+	EbTestSchemaCles(gReelle)
+	oOrpheline est un cEbResultatSql = gReelle.Envoie("INSERT INTO villes (nom, pays_code) VALUES ('Orpheline', 'XX')", EbTestVide())
+	dbgVérifieFaux(oOrpheline.Succes(), "une ville d'un pays absent est refusée")
+	dbgVérifieVrai(Position(Minuscule(oOrpheline.Message()), "foreign key") > 0, "le message dit pourquoi : " + oOrpheline.Message())
+	gReelle.Envoie("INSERT INTO pays (code, nom) VALUES ('FR', 'France')", EbTestVide())
+	oValide est un cEbResultatSql = gReelle.Envoie("INSERT INTO villes (nom, pays_code) VALUES ('Paris', 'FR')", EbTestVide())
+	dbgVérifieVrai(oValide.Succes(), "une ville d'un pays qui existe est acceptée")
+	oSuppression est un cEbResultatSql = gReelle.Envoie("DELETE FROM pays WHERE code = 'FR'", EbTestVide())
+	dbgVérifieFaux(oSuppression.Succes(), "un pays encore visé par une ville ne peut pas être supprimé")
+FIN
+
+// Une reconnexion remet le réglage : il est PAR CONNEXION, et la connexion neuve l'avait perdu (la base redémarre).
+PROCEDURE scenario_sqlite_cles_etrangeres_apres_reconnexion()
+	gReelle.ExigeClesEtrangeres()
+	dbgVérifieVrai(gReelle.Ouvre(), "première ouverture")
+	gReelle.Ferme()
+	dbgVérifieVrai(gReelle.Ouvre(), "ouverture après fermeture")
+	EbTestSchemaCles(gReelle)
+	oOrpheline est un cEbResultatSql = gReelle.Envoie("INSERT INTO villes (nom, pays_code) VALUES ('Orpheline', 'XX')", EbTestVide())
+	dbgVérifieFaux(oOrpheline.Succes(), "toujours refusée après la reconnexion")
+FIN
+
+// Sur un autre fournisseur, ExigeClesEtrangeres() ne fait rien (PostgreSQL les vérifie toujours) : l'ouverture d'un port fermé échoue comme avant, sans PRAGMA tenté.
+PROCEDURE scenario_cles_etrangeres_sans_effet_hors_sqlite()
+	oInjoignable est un cEbConnexionSqlReelle = EbTestPostgresInjoignable()
+	oInjoignable.ExigeClesEtrangeres()
+	dbgVérifieFaux(oInjoignable.Ouvre(), "PostgreSQL injoignable : l'ouverture échoue toujours")
+FIN
+
+// EbEnvoieRequete traduit une clé étrangère violée en 409 (un conflit avec l'état des données), sans le texte de la base ; une autre erreur reste un 500.
+PROCEDURE scenario_cle_etrangere_violee_leve_409()
+	gReelle.ExigeClesEtrangeres()
+	dbgVérifieVrai(gReelle.Ouvre(), "ouverture")
+	EbTestSchemaCles(gReelle)
+	oBurin  est un cEbBurin = EbTestBurin()
+	oVilles est un cEbTable = cEbTable("villes")
+	oVilles.AjouteColonne("id", "entier", Vrai, Vrai)
+	oVilles.AjouteColonne("nom", "texte", Vrai, Faux)
+	oVilles.AjouteColonne("pays_code", "texte", Vrai, Faux)
+	tabLigne est un tableau associatif
+	tabLigne["nom"] = "Orpheline"
+	tabLigne["pays_code"] = "XX"
+	oRequete est un cEbRequete = oBurin.Insert(oVilles).Values(tabLigne).ToSQL()
+	nCode    est un entier     = 0
+	sMessage est une chaîne    = ""
+	QUAND EXCEPTION DANS
+		oEssai est un cEbResultatSql = EbEnvoieRequete(gReelle, oRequete)
+	FAIRE
+		nCode    = ExceptionInfo(errCode)
+		sMessage = ExceptionInfo(errMessage)
+	FIN
+	dbgVérifieEgalité(nCode, 409, "409 : un conflit")
+	dbgVérifieEgalité(Position(sMessage, "FOREIGN KEY"), 0, "le texte de la base n'est pas donné au client")
+	dbgVérifieVrai(Position(sMessage, "clé étrangère") > 0, "le message dit de quoi il s'agit")
+FIN

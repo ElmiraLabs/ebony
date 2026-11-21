@@ -1,0 +1,60 @@
+// Le corps d'une requête POST, PUT ou PATCH, tel que les contrôleurs générés par « ebony make resource » le lisent : la reconnaissance d'un champ ABSENT. Fonctions pures. La validation d'après ressource.json (le Poinçon) est dans EbPoincon.owl, qui s'appuie sur ce fichier.
+// POURQUOI DES SENTINELLES : OWL lie le JSON du corps à une structure sans erreur, et un champ ABSENT prend la valeur par défaut du type (0, texte vide, Faux) : « absent » et « zéro » se confondent, alors que
+// PATCH (ne changer que ce qui est envoyé) et PUT (refuser un corps incomplet) doivent les distinguer. Mesuré (OWL 1.8.1) : une valeur par défaut DÉCLARÉE sur un membre de la structure s'applique aux champs absents
+// (le corps {} donne la valeur déclarée, {"prix":0} donne 0) ; un null explicite, lui, donne la valeur par défaut du TYPE, donc compte comme présent. Chaque membre déclare donc une valeur que personne n'envoie :
+//   texte, date, dateheure : le texte « __absent__ »     entier : -999999999     réel : -999999999.5 (un littéral DÉCIMAL : avec un littéral entier, OWL lit le membre comme un entier et tronque 5.5 en 5)
+//   booléen : un membre ENTIER valant -1 (un booléen n'a que deux valeurs ; mesuré : true est lu 1, false est lu 0)
+// LIMITES, à connaître : un client qui envoie exactement la sentinelle est pris pour « absent » ; un champ du MAUVAIS TYPE ({"prix":"abc"}) n'est pas détectable : OWL le remplace par la valeur par défaut du type
+// (0), pas par la sentinelle ; une décimale envoyée pour un entier est tronquée sans erreur. Ce sont des limites de la liaison d'OWL, pas de ce fichier.
+// Les valeurs ci-dessous sont celles que « ebony make resource » écrit dans la structure du corps du contrôleur (outillage : EbContenuRoutes, qui doit rester d'accord ; un test le vérifie).
+EbCorpsRequete est une CollectionDeProcédures
+
+	// Le texte que porte un membre texte, date ou dateheure absent du corps.
+	PROCEDURE EbTexteAbsent(sValeur est une chaîne) : booléen
+		RENVOYER sValeur = "__absent__"
+	FIN
+
+	// Vrai si le membre entier est absent du corps.
+	PROCEDURE EbEntierAbsent(nValeur est un entier) : booléen
+		RENVOYER nValeur = -999999999
+	FIN
+
+	// Vrai si le membre réel est absent du corps.
+	PROCEDURE EbReelAbsent(rValeur est un réel) : booléen
+		RENVOYER rValeur = -999999999.5
+	FIN
+
+	// Vrai si le membre booléen (lu comme un entier : 1, 0 ou -1) est absent du corps.
+	PROCEDURE EbBooleenAbsent(nValeur est un entier) : booléen
+		RENVOYER nValeur = -1
+	FIN
+
+	// La valeur d'un champ pour une MODIFICATION PARTIELLE (PATCH) : celle du corps si elle est présente, sinon la valeur actuelle de la ligne.
+	PROCEDURE EbTexteOuActuel(sValeur est une chaîne, sActuel est une chaîne) : chaîne
+		SI EbTexteAbsent(sValeur) ALORS
+			RENVOYER sActuel
+		FIN
+		RENVOYER sValeur
+	FIN
+
+	PROCEDURE EbEntierOuActuel(nValeur est un entier, nActuel est un entier) : entier
+		SI EbEntierAbsent(nValeur) ALORS
+			RENVOYER nActuel
+		FIN
+		RENVOYER nValeur
+	FIN
+
+	PROCEDURE EbReelOuActuel(rValeur est un réel, rActuel est un réel) : réel
+		SI EbReelAbsent(rValeur) ALORS
+			RENVOYER rActuel
+		FIN
+		RENVOYER rValeur
+	FIN
+
+	PROCEDURE EbBooleenOuActuel(nValeur est un entier, bActuel est un booléen) : booléen
+		SI EbBooleenAbsent(nValeur) ALORS
+			RENVOYER bActuel
+		FIN
+		RENVOYER nValeur = 1
+	FIN
+FIN

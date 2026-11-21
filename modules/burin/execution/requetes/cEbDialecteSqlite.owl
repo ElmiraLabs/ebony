@@ -1,0 +1,32 @@
+// Le dialecte de SQLite pour le constructeur de requêtes : noms entre guillemets doubles (un guillemet dans un nom est doublé), paramètres « {nom} » d'OWL, LIMIT et OFFSET.
+// RETURNING (SQLite 3.35 et plus) rend les colonnes écrites par un INSERT, un UPDATE ou un DELETE.
+// SQLite n'accepte pas OFFSET sans LIMIT : un décalage seul s'écrit « LIMIT -1 OFFSET n ».
+cEbDialecteSqlite est une Classe implemente iEbDialecteSql
+
+	PROCEDURE PUBLIQUE Nom(sNom est une chaîne) : chaîne
+		RENVOYER Caract(34) + Remplace(sNom, Caract(34), Caract(34) + Caract(34)) + Caract(34)
+	FIN
+
+	PROCEDURE PUBLIQUE Parametre(sNom est une chaîne) : chaîne
+		RENVOYER "{" + sNom + "}"
+	FIN
+
+	PROCEDURE PUBLIQUE Returning(sColonnes est une chaîne) : chaîne
+		RENVOYER " RETURNING " + sColonnes
+	FIN
+
+	PROCEDURE PUBLIQUE LimiteDecalage(nLimite est un entier, nDecalage est un entier) : chaîne
+		sFin est une chaîne = ""
+		SI nLimite >= 0 ALORS
+			sFin = " LIMIT " + nLimite
+		SINON
+			SI nDecalage > 0 ALORS
+				sFin = " LIMIT -1"
+			FIN
+		FIN
+		SI nDecalage > 0 ALORS
+			sFin += " OFFSET " + nDecalage
+		FIN
+		RENVOYER sFin
+	FIN
+FIN

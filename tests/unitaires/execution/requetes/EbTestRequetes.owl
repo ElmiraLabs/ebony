@@ -1,0 +1,54 @@
+// Aides communes aux tests du constructeur de requêtes de Burin : le dialecte SQLite, deux tables écrites à la main (produits et categories, qui ont chacune une colonne « nom ») et l'objet d'entrée.
+// Aucune base : tout se teste par ToSQL(), qui rend le texte et les paramètres.
+EbTestRequetes est une CollectionDeProcédures
+
+	PROCEDURE EbTestDialecte() : cEbDialecteSqlite
+		oDialecte est un cEbDialecteSqlite
+		RENVOYER oDialecte
+	FIN
+
+	PROCEDURE EbTestBurin() : cEbBurin
+		oDialecte est un cEbDialecteSqlite
+		oBurin    est un cEbBurin(oDialecte)
+		RENVOYER oBurin
+	FIN
+
+	// La table « produits » : id (clé), nom, prix, actif, cree_le.
+	PROCEDURE EbTestProduits() : cEbTable
+		oTable est un cEbTable("produits")
+		oTable.AjouteColonne("id", "entier", Vrai, Vrai)
+		oTable.AjouteColonne("nom", "texte", Vrai, Faux)
+		oTable.AjouteColonne("prix", "reel", Faux, Faux)
+		oTable.AjouteColonne("actif", "booleen", Faux, Faux)
+		oTable.AjouteColonne("cree_le", "dateheure", Faux, Faux)
+		RENVOYER oTable
+	FIN
+
+	// La table « categories » : id (clé) et nom, comme produits : une jointure confondrait les deux « nom » sans alias.
+	PROCEDURE EbTestCategories() : cEbTable
+		oTable est un cEbTable("categories")
+		oTable.AjouteColonne("id", "entier", Vrai, Vrai)
+		oTable.AjouteColonne("nom", "texte", Vrai, Faux)
+		RENVOYER oTable
+	FIN
+
+	// La table « articles » : id (clé), nom et categorie_id (la clé de categories). Jointe à categories, elle a deux colonnes « id » et deux colonnes « nom ».
+	PROCEDURE EbTestArticles() : cEbTable
+		oTable est un cEbTable("articles")
+		oTable.AjouteColonne("id", "entier", Vrai, Vrai)
+		oTable.AjouteColonne("nom", "texte", Vrai, Faux)
+		oTable.AjouteColonne("categorie_id", "entier", Faux, Faux)
+		RENVOYER oTable
+	FIN
+
+	// Le début de tout SELECT de toute la table produits : chaque colonne sous son alias « table__colonne ».
+	PROCEDURE EbTestSelectProduits() : chaîne
+		RENVOYER `SELECT "produits"."id" AS "produits__id", "produits"."nom" AS "produits__nom", "produits"."prix" AS "produits__prix", "produits"."actif" AS "produits__actif", "produits"."cree_le" AS "produits__cree_le" FROM "produits"`
+	FIN
+
+	// Le texte SQL d'une expression (condition ou ordre) : on la met dans un SELECT ou on la construit seule.
+	PROCEDURE EbTestTexte(oExpression est un cEbSql) : chaîne
+		oRequete est un cEbRequete = oExpression.Construit(EbTestDialecte())
+		RENVOYER oRequete.Texte()
+	FIN
+FIN

@@ -1,0 +1,255 @@
+// Le générateur « figurant » : des valeurs d'exemple qui ressemblent à de vraies données (prénoms, noms, courriels, villes, adresses, téléphones, phrases) pour les fabriques et les seeders. Il remplace cEbGenerateurCompteur là où l'on veut des données lisibles :
+//   oFabrique est une cFabriqueClient(cEbGenerateurFigurant(42))
+// DÉTERMINISTE : un petit générateur congruentiel à nous (Park-Miller, entiers), pas Hasard() qui rend des suites différentes sous Windows et sous Linux (mesuré). Une même graine donne les mêmes valeurs partout, d'un lancement à l'autre.
+// La SORTE du champ décide de la valeur (ValeurTexteDeSorte : prenom-masculin, prenom-feminin, prenom, nom-de-famille, produit, courriel, telephone, ville, pays, adresse, code-postal, societe, texte : ce que l'utilisateur écrit en ~sorte dans --champs). Sans sorte, le NOM de la colonne la devine : prenom, nom (de famille), email, telephone, ville, pays, adresse, code_postal, societe, description ou titre ou libelle ou commentaire (une phrase) ; un autre nom donne « <champ> <n> » comme le générateur à compteur.
+// Un prénom et un nom sont tirés une fois par LIGNE : « prenom », « nom » et « email » d'une même ligne vont ensemble (ada.lovelace12@example.com), et le courriel porte le numéro de la ligne : il est unique.
+// Un champ « nom » SANS sorte est lu comme un nom de famille : pour un produit, écrire nom:texte~produit. Fixer une valeur : le paramètre de surcharge de la fabrique (CreeAvec).
+cEbGenerateurFigurant est une Classe implemente iEbGenerateur
+PRIVÉ
+	nEtat       est un entier             = 1
+	nLigne      est un entier             = 0
+	sPrenom     est une chaîne            = ""
+	sNomFamille est une chaîne            = ""
+	oDonnees    est un cEbDonneesFigurant
+
+	// Le prochain nombre de la suite (Park-Miller : x suivant = x * 48271 modulo 2147483647 ; le produit tient dans un entier de 64 bits).
+	PROCEDURE PRIVÉE Suivant() : entier
+		:nEtat = (:nEtat * 48271) MODULO 2147483647
+		RENVOYER :nEtat
+	FIN
+
+	// Un entier de 0 à nMax - 1.
+	PROCEDURE PRIVÉE Tire(nMax est un entier) : entier
+		RENVOYER :Suivant() MODULO nMax
+	FIN
+
+	// Un élément de la liste, au hasard (de la suite).
+	PROCEDURE PRIVÉE Choisit(tabListe est un tableau de chaînes) : chaîne
+		RENVOYER tabListe[1 + :Tire(tabListe..Occurrence)]
+	FIN
+
+	// Un nombre sur deux chiffres : 7 donne « 07 ».
+	PROCEDURE PRIVÉE DeuxChiffres(nValeur est un entier) : chaîne
+		SI nValeur < 10 ALORS
+			RENVOYER "0" + nValeur
+		FIN
+		RENVOYER "" + nValeur
+	FIN
+
+	// Le texte sans accent, en minuscules, sans espace ni apostrophe ni tiret : de quoi faire une partie de courriel (Jean-Marc N'Guessan donne jeanmarc, nguessan).
+	PROCEDURE PRIVÉE Simplifie(sTexte est une chaîne) : chaîne
+		sRes est une chaîne = Minuscule(sTexte)
+		sRes = Remplace(sRes, "é", "e")
+		sRes = Remplace(sRes, "è", "e")
+		sRes = Remplace(sRes, "ê", "e")
+		sRes = Remplace(sRes, "ë", "e")
+		sRes = Remplace(sRes, "à", "a")
+		sRes = Remplace(sRes, "â", "a")
+		sRes = Remplace(sRes, "ä", "a")
+		sRes = Remplace(sRes, "î", "i")
+		sRes = Remplace(sRes, "ï", "i")
+		sRes = Remplace(sRes, "ô", "o")
+		sRes = Remplace(sRes, "ö", "o")
+		sRes = Remplace(sRes, "ù", "u")
+		sRes = Remplace(sRes, "û", "u")
+		sRes = Remplace(sRes, "ü", "u")
+		sRes = Remplace(sRes, "ç", "c")
+		sRes = Remplace(sRes, "'", "")
+		sRes = Remplace(sRes, "-", "")
+		sRes = Remplace(sRes, " ", "")
+		RENVOYER sRes
+	FIN
+
+	// Le nom de la colonne comparé sans accent ni majuscule, pour reconnaître « prénom », « Prenom », « e-mail »…
+	PROCEDURE PRIVÉE Normalise(sChamp est une chaîne) : chaîne
+		sRes est une chaîne = :Simplifie(sChamp)
+		sRes = Remplace(sRes, "_", "")
+		RENVOYER sRes
+	FIN
+
+	// Vrai si le nom (normalisé) finit par le suffixe.
+	PROCEDURE PRIVÉE Finit(sNom est une chaîne, sSuffixe est une chaîne) : booléen
+		SI Taille(sNom) < Taille(sSuffixe) ALORS
+			RENVOYER Faux
+		FIN
+		RENVOYER Droite(sNom, Taille(sSuffixe)) = sSuffixe
+	FIN
+
+	// Un prénom et un nom pour la ligne en cours (tirés une seule fois par ligne).
+	PROCEDURE PRIVÉE TireIdentite()
+		:sPrenom = :Choisit(:oDonnees.Prenoms())
+		:sNomFamille = :Choisit(:oDonnees.Noms())
+	FIN
+
+	PROCEDURE PRIVÉE Identite()
+		SI :sPrenom = "" ALORS
+			:TireIdentite()
+		FIN
+	FIN
+
+	// Une phrase de quelques mots d'exemple (pas du français correct : du texte plausible, qui change d'une ligne à l'autre).
+	PROCEDURE PRIVÉE Phrase() : chaîne
+		sPhrase est une chaîne = ""
+		nMots   est un entier  = 4 + :Tire(4)
+		POUR i = 1 À nMots
+			SI sPhrase <> "" ALORS
+				sPhrase += " "
+			FIN
+			sPhrase += :Choisit(:oDonnees.Mots())
+		FIN
+		RENVOYER Majuscule(Gauche(sPhrase, 1)) + Droite(sPhrase, Taille(sPhrase) - 1) + "."
+	FIN
+
+	PROCEDURE PUBLIQUE NouvelleLigne()
+		:nLigne++
+		:TireIdentite()
+	FIN
+
+	// La graine : la même graine donne les mêmes valeurs. Toute valeur est ramenée dans 1 à 2147483646 (0 bloquerait la suite).
+	PROCEDURE Constructeur(graine est un entier)
+		nGraine est un entier = graine MODULO 2147483647
+		SI nGraine < 0 ALORS
+			nGraine = nGraine + 2147483647
+		FIN
+		SI nGraine = 0 ALORS
+			nGraine = 1
+		FIN
+		:nEtat = nGraine
+		oDonneesFigurant est un cEbDonneesFigurant
+		:oDonnees = oDonneesFigurant
+	FIN
+
+	// La sorte que le nom de la colonne laisse deviner (« prenom », « email »…), ou « » s'il ne dit rien : le repli quand l'utilisateur n'a pas donné de ~sorte.
+	PROCEDURE PRIVÉE SorteDuChamp(sChamp est une chaîne) : chaîne
+		sNom est une chaîne = :Normalise(sChamp)
+		SI sNom = "prenom" OU :Finit(sNom, "prenom") ALORS
+			RENVOYER "prenom"
+		FIN
+		SI sNom = "email" OU sNom = "mail" OU sNom = "courriel" OU :Finit(sNom, "email") ALORS
+			RENVOYER "courriel"
+		FIN
+		SI sNom = "nom" OU sNom = "nomfamille" OU sNom = "patronyme" OU :Finit(sNom, "nomdefamille") ALORS
+			RENVOYER "nom-de-famille"
+		FIN
+		SI sNom = "commune" OU Position(sNom, "ville") > 0 ALORS
+			RENVOYER "ville"
+		FIN
+		SI sNom = "pays" OU :Finit(sNom, "pays") ALORS
+			RENVOYER "pays"
+		FIN
+		SI sNom = "telephone" OU sNom = "tel" OU sNom = "mobile" OU sNom = "portable" OU :Finit(sNom, "telephone") ALORS
+			RENVOYER "telephone"
+		FIN
+		SI sNom = "adresse" OU :Finit(sNom, "adresse") OU sNom = "rue" ALORS
+			RENVOYER "adresse"
+		FIN
+		SI sNom = "codepostal" OU sNom = "cp" OU :Finit(sNom, "codepostal") ALORS
+			RENVOYER "code-postal"
+		FIN
+		SI sNom = "societe" OU sNom = "entreprise" OU sNom = "raisonsociale" OU :Finit(sNom, "societe") ALORS
+			RENVOYER "societe"
+		FIN
+		SI sNom = "description" OU sNom = "commentaire" OU sNom = "note" OU sNom = "remarque" OU sNom = "libelle" OU sNom = "titre" OU sNom = "message" OU sNom = "texte" OU :Finit(sNom, "description") ALORS
+			RENVOYER "texte"
+		FIN
+		RENVOYER ""
+	FIN
+
+	// Le prénom de la ligne, du genre demandé (« feminin » ou « masculin ») : si le prénom tiré pour la ligne n'est pas de ce genre, un autre est tiré dans la bonne liste (la ligne garde alors ce prénom pour son courriel).
+	PROCEDURE PRIVÉE PrenomDuGenre(sGenre est une chaîne) : chaîne
+		:Identite()
+		SI sGenre = "feminin" ALORS
+			SI TableauCherche(:oDonnees.PrenomsFeminins(), :sPrenom) < 1 ALORS
+				:sPrenom = :Choisit(:oDonnees.PrenomsFeminins())
+			FIN
+			RENVOYER :sPrenom
+		FIN
+		SI TableauCherche(:oDonnees.PrenomsMasculins(), :sPrenom) < 1 ALORS
+			:sPrenom = :Choisit(:oDonnees.PrenomsMasculins())
+		FIN
+		RENVOYER :sPrenom
+	FIN
+
+	// Le texte d'une sorte (le vocabulaire de ~sorte : voir EbSortesChamp, côté générateur de code d'ebony). Vide ou inconnue : « <champ> <n> », comme le compteur.
+	PROCEDURE PUBLIQUE ValeurTexteDeSorte(sSorte est une chaîne, sChamp est une chaîne) : chaîne
+		SI sSorte = "prenom-feminin" ALORS
+			RENVOYER :PrenomDuGenre("feminin")
+		FIN
+		SI sSorte = "prenom-masculin" ALORS
+			RENVOYER :PrenomDuGenre("masculin")
+		FIN
+		SI sSorte = "prenom" ALORS
+			:Identite()
+			RENVOYER :sPrenom
+		FIN
+		SI sSorte = "courriel" ALORS
+			:Identite()
+			RENVOYER :Simplifie(:sPrenom) + "." + :Simplifie(:sNomFamille) + :nLigne + "@example.com"
+		FIN
+		SI sSorte = "nom-de-famille" ALORS
+			:Identite()
+			RENVOYER :sNomFamille
+		FIN
+		SI sSorte = "produit" ALORS
+			RENVOYER :Choisit(:oDonnees.Produits())
+		FIN
+		SI sSorte = "ville" ALORS
+			RENVOYER :Choisit(:oDonnees.Villes())
+		FIN
+		SI sSorte = "pays" ALORS
+			RENVOYER :Choisit(:oDonnees.Pays())
+		FIN
+		SI sSorte = "telephone" ALORS
+			// 01 99 00 xx xx : la plage de numéros fictifs réservée aux exemples (ARCEP).
+			RENVOYER "01 99 00 " + :DeuxChiffres(:Tire(100)) + " " + :DeuxChiffres(:Tire(100))
+		FIN
+		SI sSorte = "adresse" ALORS
+			RENVOYER (1 + :Tire(120)) + " " + :Choisit(:oDonnees.Voies()) + " " + :Choisit(:oDonnees.Rues())
+		FIN
+		SI sSorte = "code-postal" ALORS
+			RENVOYER :DeuxChiffres(1 + :Tire(95)) + (100 + :Tire(900))
+		FIN
+		SI sSorte = "societe" ALORS
+			:Identite()
+			RENVOYER :Choisit(:oDonnees.Societes()) + " " + :sNomFamille
+		FIN
+		SI sSorte = "texte" ALORS
+			RENVOYER :Phrase()
+		FIN
+		RENVOYER sChamp + " " + :nLigne
+	FIN
+
+	// Sans sorte : le nom de la colonne décide (prenom, nom, email, ville…) ; un nom qui ne dit rien donne « <champ> <n> ».
+	PROCEDURE PUBLIQUE ValeurTexte(sChamp est une chaîne) : chaîne
+		RENVOYER :ValeurTexteDeSorte(:SorteDuChamp(sChamp), sChamp)
+	FIN
+	// 1 à 100.
+	PROCEDURE PUBLIQUE ValeurEntier() : entier
+		RENVOYER 1 + :Tire(100)
+	FIN
+
+	// 0,00 à 999,99, deux décimales.
+	PROCEDURE PUBLIQUE ValeurReel() : réel
+		rValeur est un réel = :Tire(100000) / 100
+		RENVOYER rValeur
+	FIN
+
+	PROCEDURE PUBLIQUE ValeurBooleen() : booléen
+		RENVOYER :Tire(2) = 1
+	FIN
+
+	// Une date ISO valide de 2024 à 2026 (jour de 1 à 28 : toute date rendue existe).
+	PROCEDURE PUBLIQUE ValeurDate() : chaîne
+		nAnnee est un entier = 2024 + :Tire(3)
+		nMois  est un entier = 1 + :Tire(12)
+		nJour  est un entier = 1 + :Tire(28)
+		RENVOYER nAnnee + "-" + :DeuxChiffres(nMois) + "-" + :DeuxChiffres(nJour)
+	FIN
+
+	PROCEDURE PUBLIQUE ValeurDateHeure() : chaîne
+		sDate   est une chaîne = :ValeurDate()
+		nHeure  est un entier  = :Tire(24)
+		nMinute est un entier  = :Tire(60)
+		RENVOYER sDate + "T" + :DeuxChiffres(nHeure) + ":" + :DeuxChiffres(nMinute) + ":00"
+	FIN
+FIN

@@ -1,0 +1,22 @@
+// Le port du générateur de valeurs des fabriques (une interface seule dans son fichier n'est pas reconnue dans un projet : elle est déclarée dans cette Collection).
+// Une fabrique ne choisit pas ses valeurs : elle les demande à un générateur, une LIGNE à la fois (NouvelleLigne), champ par champ. Adaptateur fourni : cEbGenerateurCompteur (déterministe, identique sous Windows et Linux).
+// Un adaptateur à données réalistes (prénoms, noms, villes : « figurant ») se branche ici sans toucher aux fabriques ni aux seeders.
+// Les noms de méthode évitent les mots refusés par OWL (Date, Liste, Table…) : toutes commencent par « Valeur ».
+EbContratsGenerateur est une CollectionDeProcédures
+
+	iEbGenerateur est une Interface
+		// Commence une nouvelle ligne : les valeurs demandées ensuite sont celles de cette ligne.
+		PROCEDURE PUBLIQUE NouvelleLigne()
+		// Un texte pour ce champ (le nom du champ, pour qu'il se reconnaisse dans une assertion ; un adaptateur « figurant » s'en sert pour choisir un prénom, une ville…). Les autres valeurs ne dépendent pas du nom.
+		PROCEDURE PUBLIQUE ValeurTexte(sChamp est une chaîne) : chaîne
+		// Un texte d'une SORTE donnée (« produit », « prenom-feminin »… : le vocabulaire de ~sorte dans « ebony make resource --champs », voir EbSortesChamp) : une fabrique le demande pour un champ dont l'utilisateur a dit ce qu'il représente. sChamp (le nom de la colonne) est le repli quand la sorte est vide ou inconnue du générateur.
+		PROCEDURE PUBLIQUE ValeurTexteDeSorte(sSorte est une chaîne, sChamp est une chaîne) : chaîne
+		PROCEDURE PUBLIQUE ValeurEntier() : entier
+		PROCEDURE PUBLIQUE ValeurReel() : réel
+		PROCEDURE PUBLIQUE ValeurBooleen() : booléen
+		// Une date ISO 8601 valide « AAAA-MM-JJ ».
+		PROCEDURE PUBLIQUE ValeurDate() : chaîne
+		// Une date et une heure ISO 8601 valides « AAAA-MM-JJTHH:MM:SS ».
+		PROCEDURE PUBLIQUE ValeurDateHeure() : chaîne
+	FIN
+FIN

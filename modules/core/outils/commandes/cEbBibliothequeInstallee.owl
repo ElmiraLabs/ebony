@@ -1,0 +1,279 @@
+// La bibliothèque d'exécution de l'ebony installé sur la machine : où elle est et quelle version elle porte. Elle est faite de celle de chaque module de l'installation (modules/<nom>/execution, trouvés par Modules()),
+// dont le contenu reproduit l'arborescence de ebony/ du projet : les copier l'un après l'autre dans ebony/ (CopieDossier fusionne) donne la bibliothèque du projet.
+// Partagée par « ebony new » et « ebony init » (copie dans le projet), « ebony restore » et « ebony upgrade » : toutes doivent d'abord trouver et valider la même chose.
+// Chaque problème est une exception de code 22 (installation d'ebony illisible) : ce n'est ni la faute du nom donné ni celle du projet, il faut réinstaller ebony.
+// Par défaut, TOUS les modules de l'installation en font partie. Choisit() la limite à ceux qu'un projet a choisis (son kit, noté dans ebony.conf) : le cœur est toujours là, les autres modules ne sont ni copiés ni lus (ni leur manifeste).
+// Ne connaît que le port iEbSystemeFichiers : se teste avec un faux disque.
+cEbBibliothequeInstallee est une Classe
+PRIVÉ
+	oSysteme   est un iEbSystemeFichiers
+	bFiltre    est un booléen            = Faux
+	tabChoisis est un tableau de chaînes
+
+	PROCEDURE Constructeur(systeme est un iEbSystemeFichiers)
+		:oSysteme = systeme
+	FIN
+
+	// Limite la bibliothèque aux modules d'un projet (leurs noms, hors cœur : « burin », « auth »…). Une liste vide est un projet avec le cœur seul. À appeler AVANT Verifie(), Copie() et les lectures de manifestes.
+	// Un module choisi qui n'est pas dans l'installation fait lever Modules() (22). Sans appel, tous les modules de l'installation sont retenus.
+	PROCEDURE PUBLIQUE Choisit(tabModules est un tableau de chaînes)
+		:bFiltre = Vrai
+		:tabChoisis = tabModules
+	FIN
+
+	// Vrai si le projet a choisi ce module (sans filtre : tous).
+	PROCEDURE PRIVÉE EstChoisi(sNom est une chaîne) : booléen
+		SI PAS :bFiltre ALORS
+			RENVOYER Vrai
+		FIN
+		POUR TOUT sChoisi DE :tabChoisis
+			SI Minuscule(sChoisi) = Minuscule(sNom) ALORS
+				RENVOYER Vrai
+			FIN
+		FIN
+		RENVOYER Faux
+	FIN
+
+	// Le dossier d'installation d'ebony (transmis par le lanceur), avec des « \ ». Lève (22) s'il est inconnu.
+	PROCEDURE PRIVÉE Racine() : chaîne
+		sRacine est une chaîne = :oSysteme.DossierInstallation()
+		SI sRacine = "" ALORS
+			ExceptionDéclenche(22, "ebony ne connaît pas son dossier d'installation. Lancez ebony avec son lanceur (bin\ebony.cmd), pas directement avec owl.")
+		FIN
+		RENVOYER EbNormaliseChemin(sRacine)
+	FIN
+
+	// Chemin du dossier d'exécution du CŒUR (modules/core/execution) : celui qui porte VERSION. Lève (22) si l'installation est inconnue ou si ce dossier n'existe pas.
+	PROCEDURE PUBLIQUE Chemin() : chaîne
+		sBibliotheque est une chaîne = EbCheminExecutionModule(:Racine(), "core")
+		SI PAS :oSysteme.DossierExiste(sBibliotheque) ALORS
+			ExceptionDéclenche(22, "La bibliothèque d'ebony est introuvable : " + sBibliotheque + ". Réinstallez ebony.")
+		FIN
+		RENVOYER sBibliotheque
+	FIN
+
+	// Les modules de l'installation retenus pour le projet (leurs noms) : le cœur d'abord, obligatoire, puis chaque autre dossier de modules/ qui a un dossier execution/, par ordre alphabétique, limités à ceux que Choisit() a donnés s'il a été appelé. Un dossier de modules/ sans execution/
+	// (un module qui n'aurait que des outils) n'en est pas un ici : il n'a rien à copier dans un projet. Lève (22) si l'installation est inconnue ou si le cœur manque.
+	PROCEDURE PUBLIQUE Modules() : tableau de chaînes
+		sRacine    est une chaîne            = :Racine()
+		tabModules est un tableau de chaînes
+		sCoeur     est une chaîne            = EbCheminExecutionModule(sRacine, "core")
+		SI PAS :oSysteme.DossierExiste(sCoeur) ALORS
+			ExceptionDéclenche(22, "Le module « core » d'ebony est introuvable : " + sCoeur + ". Réinstallez ebony.")
+		FIN
+		TableauAjoute(tabModules, "core")
+		tabInstalles est un tableau de chaînes
+		POUR TOUT sNom DE :oSysteme.ListeDossiers(EbJointChemin(sRacine, "modules"))
+			SI Minuscule(sNom) <> "core" ALORS
+				SI :oSysteme.DossierExiste(EbCheminExecutionModule(sRacine, sNom)) ALORS
+					TableauAjoute(tabInstalles, sNom)
+				FIN
+			FIN
+		FIN
+		SI :bFiltre ALORS
+			// Un module demandé par le projet mais absent de l'installation : on le dit au lieu de copier une bibliothèque incomplète.
+			POUR TOUT sChoisi DE :tabChoisis
+				bInstalle est un booléen = (Minuscule(sChoisi) = "core")
+				POUR TOUT sInstalle DE tabInstalles
+					SI Minuscule(sInstalle) = Minuscule(sChoisi) ALORS
+						bInstalle = Vrai
+					FIN
+				FIN
+				SI PAS bInstalle ALORS
+					ExceptionDéclenche(22, "Le projet demande le module « " + sChoisi + " » : il n'est pas dans cette installation d'ebony (" + EbListeVirgules(tabInstalles) + "). Réinstallez ebony ou corrigez « modules » dans ebony.conf.")
+				FIN
+			FIN
+		FIN
+		POUR TOUT sInstalle DE tabInstalles
+			SI :EstChoisi(sInstalle) ALORS
+				TableauAjoute(tabModules, sInstalle)
+			FIN
+		FIN
+		RENVOYER tabModules
+	FIN
+
+	// Les dossiers d'exécution de tous les modules de l'installation, le cœur d'abord. Lève (22) si l'installation est inconnue ou si le cœur manque (rien n'est copié dans ce cas : la liste est complète avant la première copie).
+	PROCEDURE PUBLIQUE Sources() : tableau de chaînes
+		sRacine    est une chaîne            = :Racine()
+		tabSources est un tableau de chaînes
+		POUR TOUT sModule DE :Modules()
+			TableauAjoute(tabSources, EbCheminExecutionModule(sRacine, sModule))
+		FIN
+		RENVOYER tabSources
+	FIN
+
+	// Lève (22) si l'installation est inconnue ou si le cœur manque. À appeler AVANT d'écrire quoi que ce soit : Copie() ne doit pas découvrir une installation incomplète après avoir commencé.
+	PROCEDURE PUBLIQUE Verifie()
+		tabSources est un tableau de chaînes = :Sources()
+		SI tabSources..Occurrence = 0 ALORS
+			ExceptionDéclenche(22, "Aucun module d'ebony n'est déclaré : la bibliothèque est vide. Réinstallez ebony.")
+		FIN
+	FIN
+
+	// Copie la bibliothèque de TOUS les modules de l'installation dans la destination (le dossier ebony/ d'un projet), le cœur d'abord. Le parent de la destination doit exister ; une destination existante est fusionnée.
+	PROCEDURE PUBLIQUE Copie(oEcriture est un iEbEcritureFichiers, sDestination est une chaîne)
+		POUR TOUT sSource DE :Sources()
+			oEcriture.CopieDossier(sSource, sDestination)
+		FIN
+	FIN
+
+	// Les modules retenus, le cœur d'abord, puis chacun APRÈS les modules dont il dépend (membre « dependances » du manifeste, pour ceux qui sont retenus aussi) ; à égalité, l'ordre de Modules(). C'est l'ordre dans lequel
+	// les variables des modules sont écrites : les variables de la base (burin) précèdent celles d'auth, qui en dépend, comme avant qu'elles viennent des manifestes. Un cycle de dépendances ne boucle pas : les modules qui restent
+	// sont ajoutés à la suite, dans l'ordre de Modules(). Lève (22) si l'installation est inconnue ou si un manifeste est illisible.
+	PROCEDURE PUBLIQUE ModulesDependancesDAbord() : tableau de chaînes
+		tabRestants est un tableau de chaînes = :Modules()
+		tabOrdre    est un tableau de chaînes
+		nPlaces     est un entier             = 1
+		TANTQUE tabRestants..Occurrence > 0 ET nPlaces > 0
+			nPlaces = 0
+			tabSuivants est un tableau de chaînes
+			POUR TOUT sModule DE tabRestants
+				bPret est un booléen = Vrai
+				POUR TOUT sDependance DE :DependancesDuModule(sModule)
+					POUR TOUT sAttendu DE tabRestants
+						SI Minuscule(sAttendu) = Minuscule(sDependance) ET Minuscule(sAttendu) <> Minuscule(sModule) ALORS
+							bPret = Faux
+						FIN
+					FIN
+				FIN
+				SI bPret ALORS
+					TableauAjoute(tabOrdre, sModule)
+					nPlaces++
+				SINON
+					TableauAjoute(tabSuivants, sModule)
+				FIN
+			FIN
+			tabRestants = tabSuivants
+		FIN
+		POUR TOUT sReste DE tabRestants
+			TableauAjoute(tabOrdre, sReste)
+		FIN
+		RENVOYER tabOrdre
+	FIN
+
+	// Les variables d'environnement déclarées par les manifestes des modules retenus qui s'appliquent à ce projet (des cEbVariableEnv), dans l'ordre de ModulesDependancesDAbord(). Un module sans manifeste n'en déclare aucune.
+	// sFournisseur : le choix du projet pour les entrées qui en dépendent (le cœur ne le connaît que comme un texte). {dossier} reste tel quel dans les valeurs par défaut : EbVariablesSchema le remplace, il connaît le dossier.
+	// Lève (22) si l'installation est inconnue ou si un manifeste est illisible.
+	PROCEDURE PUBLIQUE VariablesModules(sFournisseur est une chaîne) : tableau
+		sRacine      est une chaîne = :Racine()
+		tabVariables est un tableau
+		POUR TOUT sModule DE :ModulesDependancesDAbord()
+			sManifeste est une chaîne = EbCheminManifesteModule(sRacine, sModule)
+			SI :oSysteme.FichierExiste(sManifeste) ALORS
+				POUR TOUT oVariable DE EbVariablesDuManifeste(:oSysteme.LitTexte(sManifeste), sManifeste, sFournisseur)
+					TableauAjoute(tabVariables, oVariable)
+				FIN
+			FIN
+		FIN
+		RENVOYER tabVariables
+	FIN
+
+	// Les fichiers déclarés par les manifestes des modules de l'installation (des cEbFichierModule), dans l'ordre des modules puis de leur manifeste. Un module sans manifeste n'en déclare aucun.
+	// Lève (22) si l'installation est inconnue ou si un manifeste est illisible.
+	PROCEDURE PUBLIQUE FichiersModules() : tableau
+		sRacine     est une chaîne = :Racine()
+		tabFichiers est un tableau
+		POUR TOUT sModule DE :Modules()
+			sManifeste est une chaîne = EbCheminManifesteModule(sRacine, sModule)
+			SI :oSysteme.FichierExiste(sManifeste) ALORS
+				POUR TOUT oFichier DE EbFichiersDuManifeste(:oSysteme.LitTexte(sManifeste), sManifeste, sModule)
+					TableauAjoute(tabFichiers, oFichier)
+				FIN
+			FIN
+		FIN
+		RENVOYER tabFichiers
+	FIN
+
+	// Les composants que les manifestes des modules retenus apportent à l'application (des cEbComposantModule), dans l'ordre des modules : c'est l'ordre de démarrage du registre des composants du projet.
+	// Un module sans manifeste, ou dont le manifeste n'a pas de « composant », n'en apporte aucun. Lève (22) si l'installation est inconnue ou si un manifeste est illisible.
+	PROCEDURE PUBLIQUE ComposantsModules() : tableau
+		sRacine       est une chaîne = :Racine()
+		tabComposants est un tableau
+		POUR TOUT sModule DE :Modules()
+			sManifeste est une chaîne = EbCheminManifesteModule(sRacine, sModule)
+			SI :oSysteme.FichierExiste(sManifeste) ALORS
+				POUR TOUT oComposant DE EbComposantsDuManifeste(:oSysteme.LitTexte(sManifeste), sManifeste, sModule)
+					TableauAjoute(tabComposants, oComposant)
+				FIN
+			FIN
+		FIN
+		RENVOYER tabComposants
+	FIN
+
+	// Les modules installés hors le cœur (leurs noms), sans tenir compte d'un choix éventuel (Choisit) : ceux qu'« ebony add » peut ajouter à un projet. Lève (22) si l'installation est inconnue ou si le cœur manque.
+	PROCEDURE PUBLIQUE ModulesInstalles() : tableau de chaînes
+		tabInstalles est un tableau de chaînes
+		POUR TOUT sNom DE :oSysteme.ListeDossiers(EbJointChemin(:Racine(), "modules"))
+			SI Minuscule(sNom) <> "core" ET :oSysteme.DossierExiste(EbCheminExecutionModule(:Racine(), sNom)) ALORS
+				TableauAjoute(tabInstalles, sNom)
+			FIN
+		FIN
+		RENVOYER tabInstalles
+	FIN
+
+	// Les modules dont dépend sModule, d'après son manifeste (membre « dependances »). Vide pour un module sans manifeste. Lève (22) si le manifeste est illisible.
+	PROCEDURE PUBLIQUE DependancesDuModule(sModule est une chaîne) : tableau de chaînes
+		tabDependances est un tableau de chaînes
+		sManifeste     est une chaîne            = EbCheminManifesteModule(:Racine(), sModule)
+		SI :oSysteme.FichierExiste(sManifeste) ALORS
+			tabDependances = EbDependancesDuManifeste(:oSysteme.LitTexte(sManifeste), sManifeste, sModule)
+		FIN
+		RENVOYER tabDependances
+	FIN
+
+	// Les fournisseurs que les modules de l'installation offrent (manifeste « fournisseurs »), sans tenir compte d'un choix éventuel (Choisit) : ce que --base de « new », « init » et « add » peut recevoir.
+	// Un seul module peut en offrir (un projet n'a qu'un fournisseur) : s'il y en avait deux, c'est une installation incohérente (22). Aucun module n'en offre : un cEbFournisseursModule vide.
+	PROCEDURE PUBLIQUE Fournisseurs() : cEbFournisseursModule
+		tabAucun est un tableau de chaînes
+		oTrouves est un cEbFournisseursModule = cEbFournisseursModule(tabAucun, "", tabAucun, tabAucun)
+		sOffreur est une chaîne               = ""
+		POUR TOUT sModule DE :ModulesInstalles()
+			sManifeste est une chaîne = EbCheminManifesteModule(:Racine(), sModule)
+			SI :oSysteme.FichierExiste(sManifeste) ALORS
+				oDuModule est un cEbFournisseursModule = EbFournisseursDuManifeste(:oSysteme.LitTexte(sManifeste), sManifeste)
+				SI oDuModule.Propose() ALORS
+					SI sOffreur <> "" ALORS
+						ExceptionDéclenche(22, "Les modules « " + sOffreur + " » et « " + sModule + " » offrent tous deux des fournisseurs (manifeste « fournisseurs ») : un projet n'en a qu'un. Réinstallez ebony.")
+					FIN
+					oTrouves = oDuModule
+					sOffreur = sModule
+				FIN
+			FIN
+		FIN
+		RENVOYER oTrouves
+	FIN
+
+	// Ce qui, dans la destination (le dossier ebony/ du projet), empêcherait de copier le module sans rien écraser : un sous-dossier propre au module (donnees, auth…) déjà là et non vide, ou son manifeste déjà copié. Le dossier « modules »,
+	// partagé par tous les manifestes, n'est pas un conflit en lui-même. Vide si la copie est possible. Les noms rendus sont relatifs à la destination, avec des « / ».
+	PROCEDURE PUBLIQUE ConflitsCopieModule(sDestination est une chaîne, sModule est une chaîne) : tableau de chaînes
+		tabConflits est un tableau de chaînes
+		sSource     est une chaîne            = EbCheminExecutionModule(:Racine(), sModule)
+		POUR TOUT sDossier DE :oSysteme.ListeDossiers(sSource)
+			SI Minuscule(sDossier) <> "modules" ALORS
+				sCible est une chaîne = EbJointChemin(sDestination, sDossier)
+				SI :oSysteme.FichierExiste(sCible) OU (:oSysteme.DossierExiste(sCible) ET PAS :oSysteme.DossierEstVide(sCible)) ALORS
+					TableauAjoute(tabConflits, sDossier + "/")
+				FIN
+			FIN
+		FIN
+		SI :oSysteme.FichierExiste(EbJointChemin(EbJointChemin(sDestination, "modules"), sModule + ".json")) ALORS
+			TableauAjoute(tabConflits, "modules/" + sModule + ".json")
+		FIN
+		RENVOYER tabConflits
+	FIN
+
+	// Copie la bibliothèque d'UN module dans la destination (le dossier ebony/ d'un projet), qui doit déjà exister : son execution/ est fusionné à ce qui s'y trouve (le manifeste va dans modules/). À appeler après ConflitsCopieModule : la copie, elle, ne vérifie rien.
+	PROCEDURE PUBLIQUE CopieModule(oEcriture est un iEbEcritureFichiers, sDestination est une chaîne, sModule est une chaîne)
+		oEcriture.CopieDossier(EbCheminExecutionModule(:Racine(), sModule), sDestination)
+	FIN
+
+	// Version de la bibliothèque installée, lue dans modules/core/execution/VERSION (fins de ligne retirées). Lève (22) si le fichier est absent ou ne contient pas un numéro valide.
+	PROCEDURE PUBLIQUE Version() : chaîne
+		sFichierVersion est une chaîne = EbJointChemin(:Chemin(), "VERSION")
+		sVersion        est une chaîne = SansEspace(Remplace(Remplace(:oSysteme.LitTexte(sFichierVersion), Caract(13), ""), Caract(10), ""))
+		SI PAS EbVersionValide(sVersion) ALORS
+			ExceptionDéclenche(22, "Le fichier " + sFichierVersion + " ne contient pas un numéro de version valide (« " + sVersion + " », attendu : 0.1.0). Réinstallez ebony.")
+		FIN
+		RENVOYER sVersion
+	FIN
+FIN

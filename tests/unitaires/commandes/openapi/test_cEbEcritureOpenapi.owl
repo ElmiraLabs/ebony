@@ -1,0 +1,72 @@
+// Tests de cEbEcritureOpenapi (l'écriture de « ebony openapi --sortie ») avec un faux disque : chemin relatif et absolu, fichier conservé sans --remplace, remplacé avec, et chaque refus (28) sans rien écrire.
+
+// Un faux disque dont le dossier de lancement est C:\Projets\Mon App (avec un sous-dossier docs).
+PROCEDURE EbTestDisqueEcritureOpenapi() : cEbSystemeFichiersFictif
+	oDisque est un cEbSystemeFichiersFictif("C:\Projets\Mon App")
+	oDisque.AjouteDossier("C:\Projets")
+	oDisque.AjouteDossier("C:\Projets\Mon App")
+	oDisque.AjouteDossier("C:\Projets\Mon App\docs")
+	RENVOYER oDisque
+FIN
+
+PROCEDURE EbTestDemandeEcritureOpenapi(sListe est une chaîne) : cEbDemandeOpenapi
+	tabArgs  est un tableau de chaînes         = ChaîneDécoupe(sListe, ";")
+	oDemande est un cEbDemandeOpenapi(tabArgs)
+	RENVOYER oDemande
+FIN
+
+// Écrit et rend « code|message » si l'écriture est refusée, ou « » si elle réussit.
+PROCEDURE EbTestRefusEcritureOpenapi(oDisque est un cEbSystemeFichiersFictif, sListe est une chaîne) : chaîne
+	sRes      est une chaîne                              = ""
+	oEcriture est un cEbEcritureOpenapi(oDisque, oDisque)
+	QUAND EXCEPTION DANS
+		sChemin est une chaîne = oEcriture.Ecrit(EbTestDemandeEcritureOpenapi(sListe), "NOUVEAU")
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Un chemin relatif se lit depuis le dossier du projet (avec « / » ou « \ »), un chemin absolu tel quel ; le chemin complet est rendu.
+PROCEDURE scenario_ecriture_relative_et_absolue()
+	oDisque   est un cEbSystemeFichiersFictif             = EbTestDisqueEcritureOpenapi()
+	oEcriture est un cEbEcritureOpenapi(oDisque, oDisque)
+	dbgVérifieEgalité(oEcriture.Ecrit(EbTestDemandeEcritureOpenapi("--sortie;openapi.json"), "UN"), "C:\Projets\Mon App\openapi.json", "chemin complet rendu")
+	dbgVérifieEgalité(oDisque.LitTexte("C:\Projets\Mon App\openapi.json"), "UN", "contenu écrit tel quel")
+	dbgVérifieEgalité(oEcriture.Ecrit(EbTestDemandeEcritureOpenapi("--sortie;docs/api.json"), "DEUX"), "C:\Projets\Mon App\docs\api.json", "sous-dossier avec « / »")
+	dbgVérifieEgalité(oDisque.LitTexte("C:\Projets\Mon App\docs\api.json"), "DEUX", "contenu du sous-dossier")
+	dbgVérifieEgalité(oEcriture.Ecrit(EbTestDemandeEcritureOpenapi("--sortie;C:\Projets\ailleurs.json"), "TROIS"), "C:\Projets\ailleurs.json", "chemin absolu tel quel")
+	dbgVérifieEgalité(oDisque.LitTexte("C:\Projets\ailleurs.json"), "TROIS", "contenu du chemin absolu")
+FIN
+
+// Un fichier qui existe est conservé et refusé (28) sans --remplace ; avec --remplace il est remplacé.
+PROCEDURE scenario_fichier_existant_conserve_sauf_remplace()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueEcritureOpenapi()
+	oDisque.AjouteFichier("C:\Projets\Mon App\openapi.json", "ANCIEN")
+	sRefus est une chaîne = EbTestRefusEcritureOpenapi(oDisque, "--sortie;openapi.json")
+	dbgVérifieEgalité(Gauche(sRefus, 3), "28|", "refusé : code 28")
+	dbgVérifieVrai(Position(sRefus, "--remplace") > 0, "le message dit comment faire")
+	dbgVérifieEgalité(oDisque.LitTexte("C:\Projets\Mon App\openapi.json"), "ANCIEN", "le fichier est intact")
+	dbgVérifieEgalité(EbTestRefusEcritureOpenapi(oDisque, "--sortie;openapi.json;--remplace"), "", "avec --remplace : écrit")
+	dbgVérifieEgalité(oDisque.LitTexte("C:\Projets\Mon App\openapi.json"), "NOUVEAU", "le fichier est remplacé")
+FIN
+
+// Un dossier à la place du fichier, ou un dossier parent absent : refus (28), et ebony ne crée aucun dossier.
+PROCEDURE scenario_refus_dossier_et_dossier_absent()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueEcritureOpenapi()
+	dbgVérifieEgalité(Gauche(EbTestRefusEcritureOpenapi(oDisque, "--sortie;docs"), 3), "28|", "un dossier à la place du fichier")
+	dbgVérifieEgalité(Gauche(EbTestRefusEcritureOpenapi(oDisque, "--sortie;docs;--remplace"), 3), "28|", "même avec --remplace")
+	sAbsent est une chaîne = EbTestRefusEcritureOpenapi(oDisque, "--sortie;nouveau/api.json")
+	dbgVérifieEgalité(Gauche(sAbsent, 3), "28|", "dossier parent absent")
+	dbgVérifieFaux(oDisque.DossierExiste("C:\Projets\Mon App\nouveau"), "aucun dossier créé")
+	dbgVérifieFaux(oDisque.FichierExiste("C:\Projets\Mon App\nouveau\api.json"), "rien d'écrit")
+FIN
+
+// Une panne d'écriture est une erreur 24 qui nomme le fichier.
+PROCEDURE scenario_panne_d_ecriture()
+	oDisque est un cEbSystemeFichiersFictif = EbTestDisqueEcritureOpenapi()
+	oDisque.DefinitEchecSur("openapi.json")
+	sRefus est une chaîne = EbTestRefusEcritureOpenapi(oDisque, "--sortie;openapi.json")
+	dbgVérifieEgalité(Gauche(sRefus, 3), "24|", "écriture interrompue : 24")
+	dbgVérifieVrai(Position(sRefus, "openapi.json") > 0, "le message nomme le fichier")
+FIN

@@ -1,0 +1,93 @@
+// Tests de cEbApplication avec la VRAIE base comme composant (cEbServiceBase, module burin) : SQLite en mémoire qui s'ouvre, répond et se ferme avec l'application, et PostgreSQL injoignable qui n'empêche pas le démarrage.
+// Le cycle de vie lui-même (idempotence, composants, santé, configuration invalide) est testé avec des composants fictifs dans tests/unitaires/execution/cycle/test_cEbApplication.owl : le cœur ne connaît aucun composant réel.
+
+// Fichiers de configuration en mémoire, journal en mémoire, horloge fixe, et l'application qui les assemble : neufs avant CHAQUE scénario.
+gDisqueBase  est un cEbLectureEnvFictive
+gSortieBase  est un cEbSortieJournalFictive
+gHorlogeBase est un cEbHorlogeFictive
+gAppliBase   est un cEbApplication          = cEbApplication(gDisqueBase, gSortieBase, gHorlogeBase)
+
+// Fixture : un schéma d'environnement dont la base SQLite est en mémoire, un journal vide, une application neuve sans composant.
+PROCEDURE avantChaqueTest()
+	gDisqueBase  = cEbLectureEnvFictive()
+	gSortieBase  = cEbSortieJournalFictive()
+	gHorlogeBase = cEbHorlogeFictive()
+	gDisqueBase.AjouteFichier("config/env.json", `{"variables":[{"cle":"DB_FICHIER","type":"chemin","defaut":":memory:"}]}`)
+	gAppliBase = cEbApplication(gDisqueBase, gSortieBase, gHorlogeBase)
+FIN
+
+// Fixture : ferme la base du scénario, même s'il a échoué en route.
+PROCEDURE apresChaqueTest()
+	gAppliBase.Arrête()
+FIN
+
+// Combien de lignes du journal contiennent ce texte.
+PROCEDURE EbTestCompteBase(sTexte est une chaîne) : entier
+	nTrouvees est un entier = 0
+	POUR nLigne = 1 À gSortieBase.NbLignes()
+		SI Position(gSortieBase.Ligne(nLigne), sTexte) > 0 ALORS
+			nTrouvees++
+		FIN
+	FIN
+	RENVOYER nTrouvees
+FIN
+
+// Ajoute à l'application la base d'un fournisseur (sqlite, postgresql…), comme le fait le service généré.
+PROCEDURE EbTestAjouteLaBase(oApp est un cEbApplication, sFournisseur est une chaîne)
+	oBase est un cEbServiceBase(sFournisseur)
+	oApp.Ajoute(oBase)
+FIN
+
+// Un démarrage normal avec la base : elle s'ouvre, le journal le dit, et la santé dit « base : ok ».
+PROCEDURE scenario_demarrage_normal_avec_la_base()
+	EbTestAjouteLaBase(gAppliBase, "sqlite")
+	gAppliBase.Démarre()
+	dbgVérifieVrai(gAppliBase.EstDemarree(), "démarrée")
+	dbgVérifieEgalité(EbTestCompteBase("Base ouverte"), 1, "la base est ouverte")
+	dbgVérifieVrai(gAppliBase.Sante().Saine(), "saine")
+	dbgVérifieEgalité(gAppliBase.Sante().Corps(), `{"statut":"ok","base":"ok"}`, "le corps de santé avec une base")
+FIN
+
+// Deux Démarre() de suite n'ouvrent la base qu'une fois.
+PROCEDURE scenario_la_base_n_est_ouverte_qu_une_fois()
+	EbTestAjouteLaBase(gAppliBase, "sqlite")
+	gAppliBase.Démarre()
+	gAppliBase.Démarre()
+	dbgVérifieEgalité(EbTestCompteBase("Base ouverte"), 1, "une seule ouverture")
+FIN
+
+// La base répond vraiment : un ordre SQL écrit, puis relu, passe par la base résiliente que les routes reçoivent (cEbServiceBase.Base()).
+PROCEDURE scenario_la_base_de_l_application_fonctionne()
+	EbTestAjouteLaBase(gAppliBase, "sqlite")
+	gAppliBase.Démarre()
+	tabAucun est un tableau associatif
+	dbgVérifieVrai(cEbServiceBase.EstDefinie(), "une base a été posée au démarrage")
+	dbgVérifieVrai(cEbServiceBase.Base().Execute("CREATE TABLE t (id INTEGER)", tabAucun).Succes(), "création")
+	dbgVérifieVrai(cEbServiceBase.Base().Execute("INSERT INTO t (id) VALUES (3)", tabAucun).Succes(), "insertion")
+	oLu est un cEbResultatSql = cEbServiceBase.Base().Execute("SELECT id FROM t", tabAucun)
+	dbgVérifieEgalité(oLu.Lignes()[1]["id"], 3, "la valeur relue")
+FIN
+
+// Arrêter l'application ferme la base ; arrêter une application jamais démarrée ne fait rien.
+PROCEDURE scenario_l_arret_ferme_la_base()
+	EbTestAjouteLaBase(gAppliBase, "sqlite")
+	gAppliBase.Démarre()
+	gAppliBase.Arrête()
+	dbgVérifieFaux(gAppliBase.EstDemarree(), "arrêtée")
+	dbgVérifieFaux(gAppliBase.Sante().Saine(), "plus saine après l'arrêt")
+FIN
+
+// PostgreSQL injoignable (port fermé) : le service démarre quand même, le journal avertit, et la santé dit « base : indisponible » (503 sur /health).
+PROCEDURE scenario_base_injoignable_le_service_demarre()
+	sSchema est une chaîne = `{"variables":[{"cle":"DB_HOTE","type":"texte","defaut":"127.0.0.1"},{"cle":"DB_PORT","type":"port","defaut":"1"},`
+	sSchema += `{"cle":"DB_NOM","type":"texte","defaut":"x"},{"cle":"DB_UTILISATEUR","type":"texte","defaut":"u"},{"cle":"DB_MOT_DE_PASSE","type":"texte","secret":true}]}`
+	gDisqueBase.AjouteFichier("config/env.json", sSchema)
+	oPostgres est un cEbApplication(gDisqueBase, gSortieBase, gHorlogeBase)
+	EbTestAjouteLaBase(oPostgres, "postgresql")
+	oPostgres.Démarre()
+	dbgVérifieVrai(oPostgres.EstDemarree(), "démarrée malgré la base absente")
+	dbgVérifieEgalité(EbTestCompteBase("Base injoignable au démarrage"), 1, "avertissement journalisé")
+	dbgVérifieFaux(oPostgres.Sante().Saine(), "pas saine : la base ne répond pas")
+	dbgVérifieEgalité(EbTestCompteBase("Sonde de la base en échec"), 1, "échec de sonde journalisé")
+	oPostgres.Arrête()
+FIN

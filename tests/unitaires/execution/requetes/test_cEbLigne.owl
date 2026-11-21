@@ -1,0 +1,144 @@
+// Tests de cEbLigne (la lecture d'une ligne rendue par la base, colonne par colonne) et de EbEnvoieRequete (500 et 503 au lieu d'un résultat en échec), sans aucune base : les lignes brutes sont écrites à la main.
+
+// Une ligne brute de la table produits, sous les alias « produits__colonne ».
+PROCEDURE EbTestLigneBrute(nId est un entier, sNom est une chaîne, rPrix est un JSON, nActif est un JSON, sCree est un JSON) : cEbLigne
+	tabBrute est un tableau associatif
+	tabBrute["produits__id"] = nId
+	tabBrute["produits__nom"] = sNom
+	tabBrute["produits__prix"] = rPrix
+	tabBrute["produits__actif"] = nActif
+	tabBrute["produits__cree_le"] = sCree
+	oLigne est un cEbLigne(tabBrute)
+	RENVOYER oLigne
+FIN
+
+// Lance une lecture et rend « code » si elle lève, « » si elle réussit : la lecture est faite par la méthode demandée sur une colonne de produits.
+PROCEDURE EbTestCodeLecture(oLigne est un cEbLigne, sColonne est une chaîne, sAccesseur est une chaîne) : chaîne
+	oProduits est un cEbTable   = EbTestProduits()
+	oColonne  est un cEbColonne = oProduits.ColonneNommee(sColonne)
+	sCode     est une chaîne    = ""
+	nVu       est un entier     = 0
+	rVu       est un réel       = 0
+	sVu       est une chaîne    = ""
+	bVu       est un booléen    = Faux
+	QUAND EXCEPTION DANS
+		SELON sAccesseur
+			CAS "entier"
+			nVu = oLigne.LitEntier(oColonne)
+			CAS "reel"
+			rVu = oLigne.LitReel(oColonne)
+			CAS "texte"
+			sVu = oLigne.LitTexte(oColonne)
+			CAS "booleen"
+			bVu = oLigne.LitBooleen(oColonne)
+			CAS "date"
+			sVu = oLigne.LitDate(oColonne)
+			CAS "null"
+			bVu = oLigne.EstNull(oColonne)
+		FIN
+	FAIRE
+		sCode = ExceptionInfo(errCode)
+	FIN
+	RENVOYER sCode
+FIN
+
+// Chaque colonne se lit avec le type OWL de sa nature : entier, texte (accents compris), réel, booléen (0 ou 1 de SQLite), date en texte ISO.
+PROCEDURE scenario_lit_chaque_nature()
+	oProduits est un cEbTable = EbTestProduits()
+	oLigne    est un cEbLigne = EbTestLigneBrute(7, "café", 12.5, 1, "2026-11-13 10:30:00")
+	dbgVérifieEgalité(oLigne.LitEntier(oProduits.ColonneNommee("id")), 7, "entier")
+	dbgVérifieEgalité(oLigne.LitTexte(oProduits.ColonneNommee("nom")), "café", "texte")
+	dbgVérifieEgalité(oLigne.LitReel(oProduits.ColonneNommee("prix")), 12.5, "réel")
+	dbgVérifieVrai(oLigne.LitBooleen(oProduits.ColonneNommee("actif")), "booléen lu 1")
+	dbgVérifieEgalité(oLigne.LitDate(oProduits.ColonneNommee("cree_le")), "2026-11-13 10:30:00", "date-heure en texte")
+	dbgVérifieEgalité(TypeVar(oLigne.LitReel(oProduits.ColonneNommee("prix"))), owlRéel, "le type rendu est un réel")
+FIN
+
+// Un booléen lu 0 est Faux ; un entier rendu pour un réel est lu comme réel.
+PROCEDURE scenario_booleen_zero_et_entier_pour_un_reel()
+	oProduits est un cEbTable = EbTestProduits()
+	oLigne    est un cEbLigne = EbTestLigneBrute(1, "thé", 8, 0, "2026-11-13")
+	dbgVérifieFaux(oLigne.LitBooleen(oProduits.ColonneNommee("actif")), "booléen lu 0")
+	dbgVérifieEgalité(oLigne.LitReel(oProduits.ColonneNommee("prix")), 8, "un entier rendu pour un réel")
+	dbgVérifieEgalité(TypeVar(oLigne.LitReel(oProduits.ColonneNommee("prix"))), owlRéel, "lu comme réel")
+FIN
+
+// NULL devient la valeur par défaut du type (0, 0, Faux, « »), y compris pour le TEXTE, qui reste Null dans une variable chaîne typée ; EstNull le distingue d'une vraie valeur.
+PROCEDURE scenario_null_devient_le_defaut_du_type()
+	oProduits est un cEbTable = EbTestProduits()
+	oLigne    est un cEbLigne = EbTestLigneBrute(1, "x", Null, Null, Null)
+	dbgVérifieEgalité(oLigne.LitReel(oProduits.ColonneNommee("prix")), 0, "réel NULL")
+	dbgVérifieFaux(oLigne.LitBooleen(oProduits.ColonneNommee("actif")), "booléen NULL")
+	sDate est une chaîne = oLigne.LitDate(oProduits.ColonneNommee("cree_le"))
+	dbgVérifieEgalité(sDate, "", "date NULL : texte vide, égal à « »")
+	dbgVérifieEgalité(Taille(sDate), 0, "taille 0")
+	dbgVérifieVrai(oLigne.EstNull(oProduits.ColonneNommee("prix")), "EstNull sur NULL")
+	dbgVérifieFaux(oLigne.EstNull(oProduits.ColonneNommee("nom")), "EstNull sur une valeur")
+	tabBrute est un tableau associatif
+	tabBrute["produits__id"] = 1
+	tabBrute["produits__nom"] = Null
+	oSansNom est un cEbLigne(tabBrute)
+	sNom     est une chaîne            = oSansNom.LitTexte(oProduits.ColonneNommee("nom"))
+	dbgVérifieEgalité(sNom, "", "texte NULL : égal à « »")
+FIN
+
+// Une colonne qui n'a pas été sélectionnée n'est pas lue comme un défaut : elle LÈVE 7010 (sinon un oubli dans le SELECT donnerait des 0 sans bruit).
+PROCEDURE scenario_colonne_non_selectionnee_refusee()
+	tabBrute est un tableau associatif
+	tabBrute["produits__id"] = 1
+	oLigne est un cEbLigne(tabBrute)
+	dbgVérifieEgalité(EbTestCodeLecture(oLigne, "id", "entier"), "", "la colonne présente se lit")
+	dbgVérifieEgalité(EbTestCodeLecture(oLigne, "nom", "texte"), "7010", "colonne absente : LitTexte")
+	dbgVérifieEgalité(EbTestCodeLecture(oLigne, "nom", "null"), "7010", "colonne absente : EstNull")
+FIN
+
+// L'accesseur doit correspondre à la nature de la colonne : LitEntier sur une colonne de texte est refusé (7010), même si la valeur lue conviendrait.
+PROCEDURE scenario_accesseur_de_la_mauvaise_nature_refuse()
+	oLigne est un cEbLigne = EbTestLigneBrute(7, "café", 12.5, 1, "2026-11-13")
+	dbgVérifieEgalité(EbTestCodeLecture(oLigne, "nom", "entier"), "7010", "LitEntier sur du texte")
+	dbgVérifieEgalité(EbTestCodeLecture(oLigne, "id", "texte"), "7010", "LitTexte sur un entier")
+	dbgVérifieEgalité(EbTestCodeLecture(oLigne, "prix", "booleen"), "7010", "LitBooleen sur un réel")
+	dbgVérifieEgalité(EbTestCodeLecture(oLigne, "actif", "date"), "7010", "LitDate sur un booléen")
+	dbgVérifieEgalité(EbTestCodeLecture(oLigne, "cree_le", "date"), "", "LitDate sur une date-heure : permis")
+FIN
+
+// Une valeur d'un type que la nature ne rend pas est refusée (7010) : un texte dans une colonne entière, un entier autre que 0 ou 1 dans une colonne booléenne.
+PROCEDURE scenario_valeur_de_type_inattendu_refusee()
+	oEntierTexte est un cEbLigne = EbTestLigneBrute(1, "x", "douze", 1, "2026-11-13")
+	dbgVérifieEgalité(EbTestCodeLecture(oEntierTexte, "prix", "reel"), "7010", "un texte pour un réel")
+	oBooleenDeux est un cEbLigne = EbTestLigneBrute(1, "x", 1.5, 2, "2026-11-13")
+	dbgVérifieEgalité(EbTestCodeLecture(oBooleenDeux, "actif", "booleen"), "7010", "2 pour un booléen")
+	oDateEntier est un cEbLigne = EbTestLigneBrute(1, "x", 1.5, 1, 20261113)
+	dbgVérifieEgalité(EbTestCodeLecture(oDateEntier, "cree_le", "date"), "7010", "un entier pour une date")
+FIN
+
+// Le résultat d'une requête en échec n'est jamais rendu : EbEnvoieRequete lève 500 pour une requête refusée par la base, et 503 pour une base injoignable.
+PROCEDURE scenario_envoi_leve_500_ou_503()
+	oBurin    est un cEbBurin               = EbTestBurin()
+	oProduits est un cEbTable               = EbTestProduits()
+	oRequete  est un cEbRequete             = oBurin.Select().From(oProduits).ToSQL()
+	oRefusee  est un cEbConnexionSqlFictive
+	oRefusee.RefuseRequete(oRequete.Texte())
+	oRefusee.Ouvre()
+	nCode500 est un entier = 0
+	QUAND EXCEPTION DANS
+		oEssai est un cEbResultatSql = EbEnvoieRequete(oRefusee, oRequete)
+	FAIRE
+		nCode500 = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(nCode500, 500, "requête refusée : 500")
+	oSaine est un cEbConnexionSqlFictive
+	oSaine.Ouvre()
+	oResultat est un cEbResultatSql = EbEnvoieRequete(oSaine, oRequete)
+	dbgVérifieVrai(oResultat.Succes(), "requête acceptée : le résultat est rendu")
+	oArretee est un cEbConnexionSqlFictive
+	oArretee.DefinitBaseArretee(Vrai)
+	oBase    est un cEbBaseResiliente(oArretee)
+	nCode503 est un entier                      = 0
+	QUAND EXCEPTION DANS
+		oEssaiBase est un cEbResultatSql = EbEnvoieRequete(oBase, oRequete)
+	FAIRE
+		nCode503 = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(nCode503, 503, "base injoignable : 503")
+FIN

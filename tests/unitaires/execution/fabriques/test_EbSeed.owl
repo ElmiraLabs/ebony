@@ -1,0 +1,58 @@
+// Tests du garde du remplissage : seuls developpement et test autorisent ; tout autre réglage refuse avec le code 7012.
+
+// Un réglage de développement ou de test autorise, quelle que soit la casse, avec ou sans espaces.
+PROCEDURE scenario_seed_autorise_developpement_et_test()
+	dbgVérifieVrai(EbSeedAutorise("developpement"), "developpement")
+	dbgVérifieVrai(EbSeedAutorise("test"), "test")
+	dbgVérifieVrai(EbSeedAutorise("  Developpement "), "casse et espaces ignorés")
+	dbgVérifieVrai(EbSeedAutorise("TEST"), "TEST")
+FIN
+
+// En cas de doute on refuse : production, vide, faute de frappe, valeur voisine.
+PROCEDURE scenario_seed_refuse_le_reste()
+	dbgVérifieFaux(EbSeedAutorise("production"), "production")
+	dbgVérifieFaux(EbSeedAutorise(""), "vide (variable absente du schéma)")
+	dbgVérifieFaux(EbSeedAutorise("developement"), "une faute de frappe")
+	dbgVérifieFaux(EbSeedAutorise("tests"), "tests n'est pas test")
+	dbgVérifieFaux(EbSeedAutorise("prod developpement"), "un mot de plus")
+FIN
+
+// Le garde ne lève rien quand le réglage autorise.
+PROCEDURE scenario_seed_exige_developpement_passe()
+	sCode est une chaîne = "aucune"
+	QUAND EXCEPTION DANS
+		EbSeedExigeDeveloppement("developpement")
+		EbSeedExigeDeveloppement("test")
+	FAIRE
+		sCode = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sCode, "aucune", "developpement et test : aucune exception")
+FIN
+
+// Un réglage de production lève 7012 et le message nomme la valeur.
+PROCEDURE scenario_seed_exige_developpement_refuse_production()
+	sCode    est une chaîne = ""
+	sMessage est une chaîne = ""
+	QUAND EXCEPTION DANS
+		EbSeedExigeDeveloppement("production")
+	FAIRE
+		sCode    = ExceptionInfo(errCode)
+		sMessage = ExceptionInfo(errMessage)
+	FIN
+	dbgVérifieEgalité(sCode, "7012", "production : refusé avec 7012")
+	dbgVérifieVrai(Position(sMessage, "production") > 0, "le message nomme la valeur")
+FIN
+
+// Une variable sans valeur est refusée avec un message qui dit d'ajouter APP_ENV.
+PROCEDURE scenario_seed_exige_developpement_refuse_vide()
+	sCode    est une chaîne = ""
+	sMessage est une chaîne = ""
+	QUAND EXCEPTION DANS
+		EbSeedExigeDeveloppement("")
+	FAIRE
+		sCode    = ExceptionInfo(errCode)
+		sMessage = ExceptionInfo(errMessage)
+	FIN
+	dbgVérifieEgalité(sCode, "7012", "vide : refusé avec 7012")
+	dbgVérifieVrai(Position(sMessage, "APP_ENV=developpement") > 0, "le message dit quoi écrire")
+FIN

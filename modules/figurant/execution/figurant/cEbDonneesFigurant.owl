@@ -1,0 +1,84 @@
+// Les données du module figurant : des listes de mots français (et ouest-africains francophones) dont le générateur tire ses valeurs. Aucun aléa ici : ce sont des tableaux fixes, lus par cEbGenerateurFigurant.
+// Écrites en littéraux (un tableau littéral OWL est limité à 255 éléments : chaque liste est bien en dessous). Les accents sont ceux d'un texte ordinaire ; aucun accent grave dans ces textes (OWL l'altère dans une chaîne entre accents graves).
+// Une classe et non une Collection : une classe ne compte pas dans les 512 procédures hors classe qu'OWL accepte par projet.
+cEbDonneesFigurant est une Classe
+PRIVÉ
+	tabPrenomsFeminins  est un tableau de chaînes
+	tabPrenomsMasculins est un tableau de chaînes
+	tabProduits         est un tableau de chaînes
+	tabPrenoms          est un tableau de chaînes
+	tabNoms             est un tableau de chaînes
+	tabVilles           est un tableau de chaînes
+	tabPays             est un tableau de chaînes
+	tabVoies            est un tableau de chaînes
+	tabRues             est un tableau de chaînes
+	tabMots             est un tableau de chaînes
+	tabSocietes         est un tableau de chaînes
+
+	PROCEDURE Constructeur()
+		:tabPrenomsFeminins = ["Léa", "Emma", "Chloé", "Jade", "Alice", "Inès", "Camille", "Manon", "Zoé", "Sarah", "Clara", "Lola", "Anaïs", "Juliette", "Eva", "Louise", "Océane", "Margaux", "Élise", "Charlotte", "Amélie", "Mélissa", "Romane", "Salomé", "Fatou", "Aïcha", "Awa", "Mariam", "Adjoua", "Aminata"]
+		:tabPrenomsMasculins = ["Lucas", "Hugo", "Louis", "Gabriel", "Arthur", "Jules", "Raphaël", "Adam", "Nathan", "Léo", "Ethan", "Théo", "Maxime", "Noé", "Paul", "Tom", "Antoine", "Mathis", "Victor", "Samuel", "Axel", "Baptiste", "Yanis", "Clément", "Moussa", "Koffi", "Ibrahim", "Séraphin", "Yves", "Jean-Marc"]
+		// Tous les prénoms : un féminin, un masculin, un féminin… (les deux listes ont la même taille ; cet ordre est celui que les graines ont toujours vu).
+		POUR i = 1 À :tabPrenomsFeminins..Occurrence
+			TableauAjoute(:tabPrenoms, :tabPrenomsFeminins[i])
+			TableauAjoute(:tabPrenoms, :tabPrenomsMasculins[i])
+		FIN
+		:tabProduits = ["Chaise en bois", "Table basse", "Lampe de bureau", "Sac à dos", "Casque audio", "Cahier A5", "Stylo à bille", "Bouteille isotherme", "Clavier sans fil", "Souris ergonomique", "Tapis de yoga", "Montre connectée", "Théière en fonte", "Couverture polaire", "Panier en osier", "Savon artisanal", "Huile d'olive", "Café moulu", "Thé vert", "Miel de fleurs", "Pagne tissé", "Sandales en cuir", "Chapeau de paille", "Pot de confiture", "Étagère murale", "Ventilateur de table", "Radio portable", "Tente de camping", "Ballon de football", "Vélo de ville", "Parasol de plage", "Carnet de notes", "Enceinte bluetooth", "Chargeur rapide", "Lunettes de soleil", "Valise cabine"]
+		:tabNoms = ["Martin", "Bernard", "Dubois", "Thomas", "Robert", "Richard", "Petit", "Durand", "Leroy", "Moreau", "Simon", "Laurent", "Lefebvre", "Michel", "Garcia", "David", "Bertrand", "Roux", "Vincent", "Fournier", "Morel", "Girard", "André", "Mercier", "Dupont", "Lambert", "Bonnet", "François", "Martinez", "Legrand", "Garnier", "Faure", "Rousseau", "Blanc", "Guérin", "Muller", "Henry", "Roussel", "Nicolas", "Perrin", "Morin", "Mathieu", "Clément", "Gauthier", "Dumont", "Lopez", "Fontaine", "Chevalier", "Robin", "Masson", "Kouassi", "Konan", "Koné", "Traoré", "Diallo", "N'Guessan", "Yao", "Bamba", "Coulibaly", "Ouattara", "Touré", "Sylla", "Kouadio", "Soro"]
+		:tabVilles = ["Paris", "Lyon", "Marseille", "Toulouse", "Nice", "Nantes", "Strasbourg", "Montpellier", "Bordeaux", "Lille", "Rennes", "Reims", "Le Havre", "Saint-Étienne", "Toulon", "Grenoble", "Dijon", "Angers", "Nîmes", "Villeurbanne", "Abidjan", "Bouaké", "Yamoussoukro", "Daloa", "San-Pédro", "Korhogo", "Dakar", "Bamako", "Ouagadougou", "Cotonou", "Lomé", "Douala", "Libreville", "Kinshasa", "Bruxelles", "Genève", "Montréal", "Casablanca"]
+		:tabPays = ["France", "Côte d'Ivoire", "Sénégal", "Mali", "Burkina Faso", "Bénin", "Togo", "Cameroun", "Gabon", "Belgique", "Suisse", "Canada", "Maroc", "Tunisie", "Algérie"]
+		:tabVoies = ["rue", "avenue", "boulevard", "impasse", "place", "allée"]
+		:tabRues = ["des Lilas", "de la République", "Victor Hugo", "du Général de Gaulle", "des Écoles", "de la Gare", "du Commerce", "Pasteur", "Jean Jaurès", "des Acacias", "de l'Église", "du Marché", "des Cocotiers", "de la Paix"]
+		:tabMots = ["livraison", "commande", "produit", "rapide", "soigné", "client", "garantie", "qualité", "service", "prix", "stock", "retour", "paiement", "facture", "conseil", "disponible", "nouveau", "simple", "durable", "pratique", "local", "artisanal", "complet", "fiable", "sur mesure", "récent", "solide", "léger"]
+		:tabSocietes = ["Société", "Groupe", "Établissements", "Maison", "Atelier", "Compagnie"]
+	FIN
+
+	// Tous les prénoms (féminins et masculins mêlés).
+	PROCEDURE PUBLIQUE Prenoms() : tableau de chaînes
+		RENVOYER :tabPrenoms
+	FIN
+
+	PROCEDURE PUBLIQUE PrenomsFeminins() : tableau de chaînes
+		RENVOYER :tabPrenomsFeminins
+	FIN
+
+	PROCEDURE PUBLIQUE PrenomsMasculins() : tableau de chaînes
+		RENVOYER :tabPrenomsMasculins
+	FIN
+
+	// Des noms de produits (« Chaise en bois », « Café moulu »).
+	PROCEDURE PUBLIQUE Produits() : tableau de chaînes
+		RENVOYER :tabProduits
+	FIN
+
+	PROCEDURE PUBLIQUE Noms() : tableau de chaînes
+		RENVOYER :tabNoms
+	FIN
+
+	PROCEDURE PUBLIQUE Villes() : tableau de chaînes
+		RENVOYER :tabVilles
+	FIN
+
+	PROCEDURE PUBLIQUE Pays() : tableau de chaînes
+		RENVOYER :tabPays
+	FIN
+
+	// « rue », « avenue »…
+	PROCEDURE PUBLIQUE Voies() : tableau de chaînes
+		RENVOYER :tabVoies
+	FIN
+
+	// « des Lilas », « Victor Hugo »… (la suite d'un type de voie).
+	PROCEDURE PUBLIQUE Rues() : tableau de chaînes
+		RENVOYER :tabRues
+	FIN
+
+	PROCEDURE PUBLIQUE Mots() : tableau de chaînes
+		RENVOYER :tabMots
+	FIN
+
+	// « Société », « Groupe »… (le début d'un nom d'entreprise).
+	PROCEDURE PUBLIQUE Societes() : tableau de chaînes
+		RENVOYER :tabSocietes
+	FIN
+FIN

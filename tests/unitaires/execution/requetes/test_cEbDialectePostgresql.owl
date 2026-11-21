@@ -1,0 +1,47 @@
+// Tests du dialecte PostgreSQL du constructeur de requêtes, sans base : l'écriture d'un nom, d'un paramètre, de la limite, du décalage et du retour des colonnes écrites. Contre un vrai serveur : tests/integration/postgresql.ps1.
+
+// Un nom est entre guillemets doubles ; un guillemet dans le nom est doublé (il ne peut pas sortir du nom) ; les accents passent.
+PROCEDURE scenario_nom_echappe()
+	oDialecte est un cEbDialectePostgresql
+	dbgVérifieEgalité(oDialecte.Nom("produits"), `"produits"`, "un nom simple")
+	dbgVérifieEgalité(oDialecte.Nom(`a"b`), `"a""b"`, "le guillemet est doublé")
+	dbgVérifieEgalité(oDialecte.Nom(`x"; DROP TABLE t; --`), `"x""; DROP TABLE t; --"`, "une tentative d'injection reste dans le nom")
+	dbgVérifieEgalité(oDialecte.Nom("café"), `"café"`, "les accents passent")
+FIN
+
+// Le paramètre est la forme « {nom} » d'OWL, que le connecteur numérote pour PostgreSQL.
+PROCEDURE scenario_parametre()
+	oDialecte est un cEbDialectePostgresql
+	dbgVérifieEgalité(oDialecte.Parametre("p1"), "{p1}", "p1")
+FIN
+
+// LIMIT et OFFSET : PostgreSQL accepte OFFSET sans LIMIT, un décalage seul s'écrit donc « OFFSET n » (SQLite a besoin de LIMIT -1).
+PROCEDURE scenario_limite_et_decalage()
+	oDialecte est un cEbDialectePostgresql
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(-1,-1), "", "rien")
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(5,-1), " LIMIT 5", "limite seule")
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(5, 10), " LIMIT 5 OFFSET 10", "limite et décalage")
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(-1, 10), " OFFSET 10", "décalage seul : pas de LIMIT -1")
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(0,-1), " LIMIT 0", "limite zéro : aucune ligne, pas « rien »")
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(-1, 0), "", "décalage zéro : rien")
+FIN
+
+// Le retour des colonnes écrites.
+PROCEDURE scenario_returning()
+	oDialecte est un cEbDialectePostgresql
+	dbgVérifieEgalité(oDialecte.Returning(`"id" AS "p__id"`), ` RETURNING "id" AS "p__id"`, "le mot clé et les colonnes")
+FIN
+
+// Le même constructeur, avec ce dialecte : un SELECT avec décalage seul, et un INSERT avec RETURNING.
+PROCEDURE scenario_constructeur_avec_le_dialecte_postgresql()
+	oDialecte est un cEbDialectePostgresql
+	oBurin    est un cEbBurin              = cEbBurin(oDialecte)
+	oProduits est un cEbTable              = EbTestProduits()
+	oId       est un cEbColonne            = oProduits.ColonneNommee("id")
+	oSelect   est un cEbRequete            = oBurin.Select().From(oProduits).Offset(10).ToSQL()
+	dbgVérifieEgalité(oSelect.Texte(), EbTestSelectProduits() + " OFFSET 10", "décalage seul sans LIMIT -1")
+	tabLigne est un tableau associatif
+	tabLigne["nom"] = "café"
+	oInsert est un cEbRequete = oBurin.Insert(oProduits).Values(tabLigne).Returning(oId).ToSQL()
+	dbgVérifieEgalité(oInsert.Texte(), `INSERT INTO "produits" ("nom") VALUES ({p1}) RETURNING "id" AS "produits__id"`, "INSERT ... RETURNING")
+FIN

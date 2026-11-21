@@ -1,0 +1,16 @@
+// Tests de cEbCodeSortie : le code de sortie que Fermeture() de projet.owl rend à la fin de la commande « ebony ».
+
+// Tant qu'aucune commande n'a échoué, le code est 0.
+PROCEDURE scenario_code_par_defaut()
+	dbgVérifieEgalité(cEbCodeSortie.Code(), 0, "0 par défaut")
+FIN
+
+// Le code posé est celui que Fermeture() rend ; poser un autre code le remplace.
+PROCEDURE scenario_pose_et_remplace()
+	cEbCodeSortie.Pose(2)
+	dbgVérifieEgalité(cEbCodeSortie.Code(), 2, "2 posé")
+	cEbCodeSortie.Pose(1)
+	dbgVérifieEgalité(cEbCodeSortie.Code(), 1, "1 remplace 2")
+	cEbCodeSortie.Pose(0)
+	dbgVérifieEgalité(cEbCodeSortie.Code(), 0, "remis à 0 : l'état ne reste pas pour les autres suites")
+FIN

@@ -1,0 +1,173 @@
+// Du SQL en morceaux, jamais du texte concaténé : du texte, un nom de table, un nom de colonne, une VALEUR (qui devient un paramètre « {p1} » passé à la base, jamais écrite dans le texte) ou un autre cEbSql.
+// C'est la brique de tout le constructeur : une condition (« prix > 10 »), un ordre (« prix DESC ») et la requête elle-même sont des cEbSql. Construit(dialecte) rend le texte et les paramètres SANS aucune base : c'est le point d'entrée des tests.
+// Les méthodes Ajoute… remplissent l'objet en place et le rendent (chaînage). On construit une expression en une fois, puis on la donne : ne pas la modifier après l'avoir combinée.
+cEbSql est une Classe
+PRIVÉ
+	tabGenres  est un tableau
+	tabTextes  est un tableau de chaînes
+	tabTables  est un tableau de chaînes
+	tabValeurs est un tableau
+
+	// Les genres de morceau : 1 texte, 2 colonne (tabTables : sa table), 3 nom (colonne, alias), 4 valeur, 5 autre cEbSql (dans tabValeurs), 6 table (le schéma éventuel est écrit à part : crm.clients). Les quatre tableaux vont par rang.
+	PROCEDURE Ajoute(nGenre est un entier, sTexte est une chaîne, sTable est une chaîne, valeur est un JSON)
+		TableauAjoute(:tabGenres, nGenre)
+		TableauAjoute(:tabTextes, sTexte)
+		TableauAjoute(:tabTables, sTable)
+		TableauAjoute(:tabValeurs, valeur)
+	FIN
+
+	// Du texte SQL, tel quel : un mot clé, un opérateur, une parenthèse. Jamais une valeur ni un nom venant de l'utilisateur (pour cela, AjouteValeur, AjouteColonne, AjouteTable).
+	PROCEDURE PUBLIQUE AjouteTexte(sTexte est une chaîne) : cEbSql
+		:Ajoute(1, sTexte, "", 0)
+		RENVOYER objet
+	FIN
+
+	// Une colonne, écrite « "table"."colonne" » par le dialecte.
+	PROCEDURE PUBLIQUE AjouteColonne(sTable est une chaîne, sColonne est une chaîne) : cEbSql
+		:Ajoute(2, sColonne, sTable, 0)
+		RENVOYER objet
+	FIN
+
+	// Un nom (de colonne, d'alias), échappé par le dialecte tel quel.
+	PROCEDURE PUBLIQUE AjouteTable(sTable est une chaîne) : cEbSql
+		:Ajoute(3, sTable, "", 0)
+		RENVOYER objet
+	FIN
+
+	// Un nom de table, échappé par le dialecte partie par partie : un schéma s'écrit « crm.clients » et sort "crm"."clients".
+	PROCEDURE PUBLIQUE AjouteNomTable(sTable est une chaîne) : cEbSql
+		:Ajoute(6, sTable, "", 0)
+		RENVOYER objet
+	FIN
+
+	// Une valeur : elle devient un paramètre, avec son type d'origine.
+	PROCEDURE PUBLIQUE AjouteValeur(valeur est un JSON) : cEbSql
+		:Ajoute(4, "", "", valeur)
+		RENVOYER objet
+	FIN
+
+	// Un autre morceau de SQL, à sa place : ses valeurs gardent leur rang dans la requête finale.
+	PROCEDURE PUBLIQUE AjouteSql(oSql est un cEbSql) : cEbSql
+		:Ajoute(5, "", "", oSql)
+		RENVOYER objet
+	FIN
+
+	// Du SQL brut avec des paramètres nommés : « prix > {min} » et { "min": 10 }. Chaque {nom} devient une valeur de la requête (jamais écrite dans le texte) ; un nom absent des paramètres, une accolade ouverte
+	// sans fermeture ou un nom vide lèvent l'erreur 7007. Les valeurs gardent leur type : c'est la porte de sortie quand le constructeur ne sait pas écrire une condition.
+	PROCEDURE PUBLIQUE AjouteBrut(sTexte est une chaîne, parametres est un tableau associatif) : cEbSql
+		sReste est une chaîne = sTexte
+		nDebut est un entier  = Position(sReste, "{")
+		TANTQUE nDebut > 0
+			nFin est un entier = Position(sReste, "}")
+			SI nFin < nDebut ALORS
+				ExceptionDéclenche(7007, "SQL brut invalide : une accolade ouverte n'est pas fermée dans « " + sTexte + " ».")
+			FIN
+			sNom est une chaîne = Milieu(sReste, nDebut + 1, nFin - nDebut - 1)
+			SI Taille(sNom) = 0 ALORS
+				ExceptionDéclenche(7007, "SQL brut invalide : un paramètre « {} » n'a pas de nom dans « " + sTexte + " ».")
+			FIN
+			SI TableauCherche(parametres, sNom) < 1 ALORS
+				ExceptionDéclenche(7007, "SQL brut invalide : le paramètre « {" + sNom + "} » n'est pas dans les paramètres donnés (« " + sTexte + " »).")
+			FIN
+			SI nDebut > 1 ALORS
+				:AjouteTexte(Gauche(sReste, nDebut - 1))
+			FIN
+			:AjouteValeur(parametres[sNom])
+			sReste = Droite(sReste, Taille(sReste) - nFin)
+			nDebut = Position(sReste, "{")
+		FIN
+		SI Taille(sReste) > 0 ALORS
+			SI Position(sReste, "}") > 0 ALORS
+				ExceptionDéclenche(7007, "SQL brut invalide : une accolade fermée n'a pas d'ouvrante dans « " + sTexte + " ».")
+			FIN
+			:AjouteTexte(sReste)
+		FIN
+		RENVOYER objet
+	FIN
+
+	// Remplit cet objet avec les expressions jointes par l'opérateur (« AND » ou « OR », avec ses espaces), entre parenthèses ; les expressions vides, et un tableau vide, sont IGNORÉS (les filtres facultatifs).
+	// Une seule expression est reprise telle quelle, sans parenthèses ; aucune, l'objet reste vide.
+	PROCEDURE PUBLIQUE Joint(sOperateur est une chaîne, expressions est un tableau) : cEbSql
+		tabUtiles   est un tableau
+		oExpression est un cEbSql
+		POUR TOUT oCandidate DE expressions
+			oExpression = oCandidate
+			SI PAS oExpression.Vide() ALORS
+				TableauAjoute(tabUtiles, oExpression)
+			FIN
+		FIN
+		SI tabUtiles..Occurrence = 1 ALORS
+			:AjouteSql(tabUtiles[1])
+		FIN
+		SI tabUtiles..Occurrence > 1 ALORS
+			:AjouteTexte("(")
+			POUR i = 1 À tabUtiles..Occurrence
+				SI i > 1 ALORS
+					:AjouteTexte(sOperateur)
+				FIN
+				:AjouteSql(tabUtiles[i])
+			FIN
+			:AjouteTexte(")")
+		FIN
+		RENVOYER objet
+	FIN
+
+	// Vrai si rien n'a été ajouté (une expression vide est ignorée par Joint).
+	PROCEDURE PUBLIQUE Vide() : booléen
+		RENVOYER :tabGenres..Occurrence = 0
+	FIN
+
+	// Les colonnes citées, sous la forme « table.colonne » (celles des morceaux imbriqués comprises), pour vérifier qu'elles appartiennent aux tables de la requête.
+	PROCEDURE PUBLIQUE Colonnes() : tableau de chaînes
+		tabColonnes est un tableau de chaînes
+		oImbrique   est un cEbSql
+		POUR i = 1 À :tabGenres..Occurrence
+			SI :tabGenres[i] = 2 ALORS
+				TableauAjoute(tabColonnes, :tabTables[i] + "." + :tabTextes[i])
+			FIN
+			SI :tabGenres[i] = 5 ALORS
+				oImbrique = :tabValeurs[i]
+				POUR TOUT sColonne DE oImbrique.Colonnes()
+					TableauAjoute(tabColonnes, sColonne)
+				FIN
+			FIN
+		FIN
+		RENVOYER tabColonnes
+	FIN
+
+	// Écrit le texte avec le dialecte ; chaque valeur est enregistrée dans la requête, qui rend son paramètre. Réservé à Construit (et aux morceaux imbriqués, qui partagent la même requête : la numérotation continue).
+	PROCEDURE PUBLIQUE Ecrit(dialecte est un iEbDialecteSql, requete est un cEbRequete) : chaîne
+		sSql      est une chaîne = ""
+		oImbrique est un cEbSql
+		POUR i = 1 À :tabGenres..Occurrence
+			SI :tabGenres[i] = 1 ALORS
+				sSql += :tabTextes[i]
+			FIN
+			SI :tabGenres[i] = 2 ALORS
+				sSql += EbNomTableSql(dialecte, :tabTables[i]) + "." + dialecte.Nom(:tabTextes[i])
+			FIN
+			SI :tabGenres[i] = 6 ALORS
+				sSql += EbNomTableSql(dialecte, :tabTextes[i])
+			FIN
+			SI :tabGenres[i] = 3 ALORS
+				sSql += dialecte.Nom(:tabTextes[i])
+			FIN
+			SI :tabGenres[i] = 4 ALORS
+				sSql += requete.Parametre(:tabValeurs[i])
+			FIN
+			SI :tabGenres[i] = 5 ALORS
+				oImbrique = :tabValeurs[i]
+				sSql += oImbrique.Ecrit(dialecte, requete)
+			FIN
+		FIN
+		RENVOYER sSql
+	FIN
+
+	// Le texte SQL et ses paramètres, sans aucune base : de quoi tester une requête et de quoi l'envoyer (iEbConnexionSql.Envoie(requete.Texte(), requete.Parametres())).
+	PROCEDURE PUBLIQUE Construit(dialecte est un iEbDialecteSql) : cEbRequete
+		oRequete est un cEbRequete(dialecte)
+		sTexte   est une chaîne              = :Ecrit(dialecte, oRequete)
+		oRequete.DefinitTexte(sTexte)
+		RENVOYER oRequete
+	FIN
+FIN

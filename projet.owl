@@ -1,0 +1,14 @@
+Ebony est un Projet
+	PROPRIETES
+		Langues                                = [langueFrançais]
+		Description                            = "Framework d'applications pour OWL, avec la commande ebony"
+		Auteur                                 = "ElmiraLabs"
+		Licence                                = "MIT"
+		ActiveAvertissementConventionDeNommage = Vrai
+	FIN
+
+	// Le code de sortie de la commande « ebony » : posé par une commande en échec (cEbCodeSortie), rendu ici (OWL 1.9.0 ne le donne qu'à cet endroit dans un projet).
+	PROCEDURE Fermeture()
+		RENVOYER cEbCodeSortie.Code()
+	FIN
+FIN

@@ -1,0 +1,53 @@
+// Tests des correspondances d'« ebony openapi » (EbSchemaOpenapi) : types, formats, mots des règles, noms et nombres.
+
+PROCEDURE scenario_types_et_formats_openapi()
+	dbgVérifieEgalité(EbTypeOpenapi("entier"), "integer", "entier")
+	dbgVérifieEgalité(EbTypeOpenapi("reel"), "number", "réel")
+	dbgVérifieEgalité(EbTypeOpenapi("booleen"), "boolean", "booléen")
+	dbgVérifieEgalité(EbTypeOpenapi("texte"), "string", "texte")
+	dbgVérifieEgalité(EbTypeOpenapi("date"), "string", "date")
+	dbgVérifieEgalité(EbFormatOpenapi("entier"), "int64", "format entier")
+	dbgVérifieEgalité(EbFormatOpenapi("reel"), "double", "format réel")
+	dbgVérifieEgalité(EbFormatOpenapi("date"), "date", "format date")
+	dbgVérifieEgalité(EbFormatOpenapi("dateheure"), "date-time", "format date et heure")
+	dbgVérifieEgalité(EbFormatOpenapi("texte"), "", "pas de format pour un texte")
+	dbgVérifieEgalité(EbFormatOpenapi("booleen"), "", "pas de format pour un booléen")
+FIN
+
+// Une règle ne devient un mot OpenAPI que pour le type où elle s'exprime ; sinon « » (elle est omise).
+PROCEDURE scenario_mots_des_regles_selon_le_type()
+	dbgVérifieEgalité(EbMotOpenapi("texte", "longueurMin"), "minLength", "texte : longueurMin")
+	dbgVérifieEgalité(EbMotOpenapi("texte", "longueurMax"), "maxLength", "texte : longueurMax")
+	dbgVérifieEgalité(EbMotOpenapi("texte", "valeurs"), "enum", "texte : valeurs")
+	dbgVérifieEgalité(EbMotOpenapi("texte", "motif"), "pattern", "texte : motif")
+	dbgVérifieEgalité(EbMotOpenapi("entier", "min"), "minimum", "entier : min")
+	dbgVérifieEgalité(EbMotOpenapi("entier", "max"), "maximum", "entier : max")
+	dbgVérifieEgalité(EbMotOpenapi("entier", "valeurs"), "enum", "entier : valeurs")
+	dbgVérifieEgalité(EbMotOpenapi("reel", "min"), "minimum", "réel : min")
+	dbgVérifieEgalité(EbMotOpenapi("reel", "valeurs"), "", "réel : valeurs ne s'exprime pas")
+	dbgVérifieEgalité(EbMotOpenapi("texte", "min"), "", "texte : min n'existe pas")
+	dbgVérifieEgalité(EbMotOpenapi("booleen", "min"), "", "booléen : aucune règle")
+	dbgVérifieEgalité(EbMotOpenapi("date", "motif"), "", "date : aucune règle")
+FIN
+
+// Un nom d'identifiant : lettres ASCII, chiffres et souligné ; sinon le nom du dossier, puis « Ressource ».
+PROCEDURE scenario_nom_d_identifiant_openapi()
+	dbgVérifieEgalité(EbNomOpenapi("Produit", "produit"), "Produit", "un nom sûr reste tel quel")
+	dbgVérifieEgalité(EbNomOpenapi("Café au lait", "cafe-au-lait"), "Cafaulait", "accents et espaces retirés")
+	dbgVérifieEgalité(EbNomOpenapi("Été", "ete"), "t", "seules les lettres ASCII restent")
+	dbgVérifieEgalité(EbNomOpenapi("日本", "client"), "client", "rien d'ASCII : le nom du dossier")
+	dbgVérifieEgalité(EbNomOpenapi("日本", "客户"), "Ressource", "rien d'ASCII nulle part : Ressource")
+FIN
+
+PROCEDURE scenario_nombre_openapi()
+	dbgVérifieVrai(EbNombreOpenapi("12"), "entier")
+	dbgVérifieVrai(EbNombreOpenapi("-3"), "entier négatif")
+	dbgVérifieVrai(EbNombreOpenapi("0.5"), "décimal")
+	dbgVérifieVrai(EbNombreOpenapi("-0.5"), "décimal négatif")
+	dbgVérifieFaux(EbNombreOpenapi(""), "vide")
+	dbgVérifieFaux(EbNombreOpenapi("-"), "signe seul")
+	dbgVérifieFaux(EbNombreOpenapi("."), "point seul")
+	dbgVérifieFaux(EbNombreOpenapi("1.2.3"), "deux points")
+	dbgVérifieFaux(EbNombreOpenapi("1e5"), "exposant refusé : une valeur simple")
+	dbgVérifieFaux(EbNombreOpenapi("abc"), "texte")
+FIN

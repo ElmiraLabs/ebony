@@ -1,0 +1,69 @@
+// Les fournisseurs qu'un module offre à l'application (manifeste « fournisseurs »), tels que le cœur les lit : les valeurs permises de l'option --base, celle qu'on prend sans option, et les CAPACITÉS de chacun
+// (une capacité est un mot du manifeste, par exemple ce qui permet d'écrire certains fichiers du module : le cœur ne sait pas ce qu'elle veut dire, il compare le mot d'un fichier à la liste du fournisseur du projet). Objet valeur immuable.
+// Le cœur ne connaît AUCUN nom de fournisseur ni de capacité : il compare ce que l'utilisateur a écrit à cette liste, fournie par le module (modules/<nom>/execution/modules/<nom>.json). Un module sans « fournisseurs » n'en offre aucun.
+cEbFournisseursModule est une Classe
+PRIVÉ
+	tabValeurs         est un tableau de chaînes
+	sDefaut            est une chaîne            = ""
+	tabNomsCapacites   est un tableau de chaînes
+	tabListesCapacites est un tableau de chaînes
+
+	// nomsCapacites et listesCapacites vont par paire : la liste de rang i est celle de la capacité de rang i, écrite « a|b|c » (les noms de fournisseurs n'ont jamais de « | »).
+	PROCEDURE Constructeur(valeurs est un tableau de chaînes, Defaut est une chaîne, nomsCapacites est un tableau de chaînes, listesCapacites est un tableau de chaînes)
+		POUR TOUT sValeur DE valeurs
+			TableauAjoute(:tabValeurs, sValeur)
+		FIN
+		:sDefaut = Defaut
+		POUR TOUT sNom DE nomsCapacites
+			TableauAjoute(:tabNomsCapacites, sNom)
+		FIN
+		POUR TOUT sListe DE listesCapacites
+			TableauAjoute(:tabListesCapacites, sListe)
+		FIN
+	FIN
+
+	// Vrai si un module offre au moins un fournisseur (sinon l'option --base n'a rien à choisir).
+	PROCEDURE PUBLIQUE Propose() : booléen
+		RENVOYER :tabValeurs..Occurrence > 0
+	FIN
+
+	// Les valeurs permises, dans l'ordre du manifeste.
+	PROCEDURE PUBLIQUE Valeurs() : tableau de chaînes
+		RENVOYER :tabValeurs
+	FIN
+
+	// Les valeurs permises séparées par « | » (la forme que EbVerifieValeurOption attend et que l'aide affiche).
+	PROCEDURE PUBLIQUE ValeursEnListe() : chaîne
+		sListe est une chaîne = ""
+		POUR TOUT sValeur DE :tabValeurs
+			SI sListe <> "" ALORS
+				sListe += "|"
+			FIN
+			sListe += sValeur
+		FIN
+		RENVOYER sListe
+	FIN
+
+	// Le fournisseur d'un projet créé sans --base (vide si le module n'en offre aucun).
+	PROCEDURE PUBLIQUE Defaut() : chaîne
+		RENVOYER :sDefaut
+	FIN
+
+	// Vrai si ce fournisseur offre cette capacité. Faux pour un fournisseur vide ou inconnu, et pour une capacité que personne ne déclare.
+	PROCEDURE PUBLIQUE Offre(sCapacite est une chaîne, sFournisseur est une chaîne) : booléen
+		bOffre est un booléen = Faux
+		SI sFournisseur = "" ALORS
+			RENVOYER Faux
+		FIN
+		nRang est un entier = 0
+		POUR TOUT sNom DE :tabNomsCapacites
+			nRang++
+			SI sNom = sCapacite ALORS
+				SI Position("|" + :tabListesCapacites[nRang] + "|", "|" + Minuscule(sFournisseur) + "|") > 0 ALORS
+					bOffre = Vrai
+				FIN
+			FIN
+		FIN
+		RENVOYER bOffre
+	FIN
+FIN

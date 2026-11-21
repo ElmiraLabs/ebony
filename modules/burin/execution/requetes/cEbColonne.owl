@@ -1,0 +1,215 @@
+// Une colonne d'une table, telle que Burin la connaît : sa table, son nom en base, sa nature (entier, texte, reel, booleen, date, dateheure), si elle accepte NULL et si elle fait partie de la clé.
+// Objet valeur immuable ; c'est aussi lui qui construit les conditions et les ordres : « produits.Prix.Gt(10) » rend un cEbSql (une condition), « produits.Prix.Desc() » un ordre.
+// Une valeur qui ne convient pas à la colonne (un texte pour un entier, Null) est refusée tout de suite, à la construction (erreur 7002) : jamais un SQL faux envoyé à la base.
+// La définition d'une colonne ne dépend d'aucune requête : une factory ou un seeder la lira de la même façon.
+cEbColonne est une Classe
+PRIVÉ
+	sTable   est une chaîne = ""
+	sNom     est une chaîne = ""
+	sNature  est une chaîne = ""
+	bNotNull est un booléen = Faux
+	bCle     est un booléen = Faux
+
+	PROCEDURE Constructeur(NomTable est une chaîne, NomColonne est une chaîne, Nature est une chaîne, ExigeValeur est un booléen, EstCle est un booléen)
+		SI PAS EbNomSqlValide(NomTable) ALORS
+			ExceptionDéclenche(7005, "Définition de colonne invalide : le nom de la table est vide ou contient un caractère de contrôle.")
+		FIN
+		SI PAS EbNomSqlValide(NomColonne) ALORS
+			ExceptionDéclenche(7005, "Définition de colonne invalide : le nom d'une colonne de « " + NomTable + " » est vide ou contient un caractère de contrôle.")
+		FIN
+		SI PAS EbNatureValide(Nature) ALORS
+			ExceptionDéclenche(7005, "Définition de colonne invalide : « " + NomTable + "." + NomColonne + " » a la nature « " + Nature + " ». Natures possibles : " + Remplace(EbNaturesColonne(), "|", ", ") + ".")
+		FIN
+		:sTable = NomTable
+		:sNom = NomColonne
+		:sNature = Nature
+		:bNotNull = ExigeValeur
+		:bCle = EstCle
+	FIN
+
+	// Le nom de la table à laquelle elle appartient.
+	PROCEDURE PUBLIQUE NomTable() : chaîne
+		RENVOYER :sTable
+	FIN
+
+	// Son nom en base.
+	PROCEDURE PUBLIQUE Nom() : chaîne
+		RENVOYER :sNom
+	FIN
+
+	// Sa nature : entier, texte, reel, booleen, date ou dateheure.
+	PROCEDURE PUBLIQUE Nature() : chaîne
+		RENVOYER :sNature
+	FIN
+
+	// Vrai si la colonne refuse NULL.
+	PROCEDURE PUBLIQUE NotNull() : booléen
+		RENVOYER :bNotNull
+	FIN
+
+	// Vrai si elle fait partie de la clé de la table.
+	PROCEDURE PUBLIQUE Cle() : booléen
+		RENVOYER :bCle
+	FIN
+
+	// « table.colonne » : la forme sous laquelle les expressions citent une colonne (cEbSql.Colonnes).
+	PROCEDURE PUBLIQUE Reference() : chaîne
+		RENVOYER :sTable + "." + :sNom
+	FIN
+
+	// Lève (7002) si la valeur ne convient pas à la nature de la colonne. sMethode nomme l'opérateur, pour le message.
+	PROCEDURE PUBLIQUE VerifieValeur(valeur est un JSON, sMethode est une chaîne)
+		SI TypeVar(valeur) = 0 ALORS
+			ExceptionDéclenche(7002, "Valeur refusée pour " + :Reference() + "." + sMethode + "() : Null. Une comparaison avec NULL est toujours fausse en SQL : utilisez IsNull() ou IsNotNull().")
+		FIN
+		SI PAS EbValeurConvient(:sNature, valeur) ALORS
+			ExceptionDéclenche(7002, "Valeur refusée pour " + :Reference() + "." + sMethode + "() : une valeur de type « " + EbNomTypeValeur(valeur) + " » pour une colonne de nature « " + :sNature + " ».")
+		FIN
+	FIN
+
+	// Lève (7002) si la valeur ne peut pas être ÉCRITE dans la colonne : Null n'est permis que si la colonne accepte NULL (pour comparer à NULL, c'est IsNull()), toute autre valeur doit convenir à la nature.
+	PROCEDURE PUBLIQUE VerifieValeurEcriture(valeur est un JSON, sMethode est une chaîne)
+		SI TypeVar(valeur) = 0 ALORS
+			SI :bNotNull ALORS
+				ExceptionDéclenche(7002, "Valeur refusée pour " + :Reference() + " (" + sMethode + "()) : Null, alors que la colonne refuse NULL.")
+			FIN
+		SINON
+			:VerifieValeur(valeur, sMethode)
+		FIN
+	FIN
+
+	// Une comparaison « colonne <opérateur> valeur », la valeur vérifiée puis passée en paramètre.
+	PROCEDURE Comparaison(sOperateur est une chaîne, sMethode est une chaîne, valeur est un JSON) : cEbSql
+		:VerifieValeur(valeur, sMethode)
+		oSql est un cEbSql
+		oSql.AjouteColonne(:sTable, :sNom)
+		oSql.AjouteTexte(sOperateur)
+		oSql.AjouteValeur(valeur)
+		RENVOYER oSql
+	FIN
+
+	// colonne = valeur
+	PROCEDURE PUBLIQUE Eq(valeur est un JSON) : cEbSql
+		RENVOYER :Comparaison(" = ", "Eq", valeur)
+	FIN
+
+	// colonne = autre colonne : la condition d'une jointure (InnerJoin, LeftJoin). Aucune valeur, donc aucun paramètre. Lève (7002) si les natures sont incompatibles (un entier avec un réel passe, le reste doit être de même nature).
+	PROCEDURE PUBLIQUE EqCol(oAutre est un cEbColonne) : cEbSql
+		SI PAS EbNaturesComparables(:sNature, oAutre.Nature()) ALORS
+			ExceptionDéclenche(7002, "EqCol() refusée : " + :Reference() + " est de nature « " + :sNature + " » et " + oAutre.Reference() + " de nature « " + oAutre.Nature() + " » : une jointure compare des colonnes de même nature.")
+		FIN
+		oSql est un cEbSql
+		oSql.AjouteColonne(:sTable, :sNom)
+		oSql.AjouteTexte(" = ")
+		oSql.AjouteColonne(oAutre.NomTable(), oAutre.Nom())
+		RENVOYER oSql
+	FIN
+
+	// colonne <> valeur
+	PROCEDURE PUBLIQUE Ne(valeur est un JSON) : cEbSql
+		RENVOYER :Comparaison(" <> ", "Ne", valeur)
+	FIN
+
+	// colonne > valeur
+	PROCEDURE PUBLIQUE Gt(valeur est un JSON) : cEbSql
+		RENVOYER :Comparaison(" > ", "Gt", valeur)
+	FIN
+
+	// colonne >= valeur
+	PROCEDURE PUBLIQUE Gte(valeur est un JSON) : cEbSql
+		RENVOYER :Comparaison(" >= ", "Gte", valeur)
+	FIN
+
+	// colonne < valeur
+	PROCEDURE PUBLIQUE Lt(valeur est un JSON) : cEbSql
+		RENVOYER :Comparaison(" < ", "Lt", valeur)
+	FIN
+
+	// colonne <= valeur
+	PROCEDURE PUBLIQUE Lte(valeur est un JSON) : cEbSql
+		RENVOYER :Comparaison(" <= ", "Lte", valeur)
+	FIN
+
+	// colonne LIKE motif : seulement pour une colonne de texte. Le motif est une VALEUR (« a% » est passé en paramètre, jamais écrit dans le texte).
+	PROCEDURE PUBLIQUE Like(sMotif est une chaîne) : cEbSql
+		SI :sNature <> "texte" ALORS
+			ExceptionDéclenche(7002, "Like() ne s'applique qu'à une colonne de texte : " + :Reference() + " est de nature « " + :sNature + " ».")
+		FIN
+		RENVOYER :Comparaison(" LIKE ", "Like", sMotif)
+	FIN
+
+	// colonne IS NULL
+	PROCEDURE PUBLIQUE IsNull() : cEbSql
+		oSql est un cEbSql
+		oSql.AjouteColonne(:sTable, :sNom)
+		oSql.AjouteTexte(" IS NULL")
+		RENVOYER oSql
+	FIN
+
+	// colonne IS NOT NULL
+	PROCEDURE PUBLIQUE IsNotNull() : cEbSql
+		oSql est un cEbSql
+		oSql.AjouteColonne(:sTable, :sNom)
+		oSql.AjouteTexte(" IS NOT NULL")
+		RENVOYER oSql
+	FIN
+
+	// colonne BETWEEN borneBasse AND borneHaute (bornes comprises), les deux valeurs vérifiées et passées en paramètres.
+	PROCEDURE PUBLIQUE Between(borneBasse est un JSON, borneHaute est un JSON) : cEbSql
+		:VerifieValeur(borneBasse, "Between")
+		:VerifieValeur(borneHaute, "Between")
+		oSql est un cEbSql
+		oSql.AjouteColonne(:sTable, :sNom)
+		oSql.AjouteTexte(" BETWEEN ")
+		oSql.AjouteValeur(borneBasse)
+		oSql.AjouteTexte(" AND ")
+		oSql.AjouteValeur(borneHaute)
+		RENVOYER oSql
+	FIN
+
+	// colonne IN (v1, v2…) : un paramètre par valeur. Une liste vide est refusée (7003) : « IN () » n'est pas du SQL valide, et « aucune ligne » serait une réponse silencieuse à un oubli.
+	PROCEDURE PUBLIQUE IsIn(valeurs est un tableau) : cEbSql
+		RENVOYER :ListeValeurs(" IN (", "IsIn", valeurs)
+	FIN
+
+	// colonne NOT IN (v1, v2…), mêmes règles que IsIn.
+	PROCEDURE PUBLIQUE NotIn(valeurs est un tableau) : cEbSql
+		RENVOYER :ListeValeurs(" NOT IN (", "NotIn", valeurs)
+	FIN
+
+	PROCEDURE ListeValeurs(sDebut est une chaîne, sMethode est une chaîne, valeurs est un tableau) : cEbSql
+		SI valeurs..Occurrence = 0 ALORS
+			ExceptionDéclenche(7003, "Liste vide pour " + :Reference() + "." + sMethode + "() : « IN () » n'est pas du SQL valide. Testez la liste avant de bâtir la condition (ou n'ajoutez pas la condition).")
+		FIN
+		POUR TOUT valeur DE valeurs
+			:VerifieValeur(valeur, sMethode)
+		FIN
+		oSql est un cEbSql
+		oSql.AjouteColonne(:sTable, :sNom)
+		oSql.AjouteTexte(sDebut)
+		POUR i = 1 À valeurs..Occurrence
+			SI i > 1 ALORS
+				oSql.AjouteTexte(", ")
+			FIN
+			oSql.AjouteValeur(valeurs[i])
+		FIN
+		oSql.AjouteTexte(")")
+		RENVOYER oSql
+	FIN
+
+	// Un ordre croissant, pour OrderBy.
+	PROCEDURE PUBLIQUE Asc() : cEbSql
+		oSql est un cEbSql
+		oSql.AjouteColonne(:sTable, :sNom)
+		oSql.AjouteTexte(" ASC")
+		RENVOYER oSql
+	FIN
+
+	// Un ordre décroissant, pour OrderBy.
+	PROCEDURE PUBLIQUE Desc() : cEbSql
+		oSql est un cEbSql
+		oSql.AjouteColonne(:sTable, :sNom)
+		oSql.AjouteTexte(" DESC")
+		RENVOYER oSql
+	FIN
+FIN

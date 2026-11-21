@@ -1,0 +1,172 @@
+// La description d'une ressource : app/domaine/<dossier>/ressource.json, écrite UNE fois par « ebony make resource » (comme tout fichier généré, ebony ne la remplace jamais ; elle appartient ensuite à l'utilisateur).
+// Ebony ne peut pas relire les classes qu'il a générées (OWL ne charge que le projet en cours) : ce que le générateur sait d'un champ (nom de colonne, type, clé, NULL, référence) est donc écrit dans un fichier de DONNÉES.
+// Aujourd'hui, « ebony make migration » le lit pour écrire la table sans répéter --champs. Fonctions pures (aucun accès au disque), testées dans tests/unitaires/commandes/make/.
+// Forme (les membres facultatifs ne sont écrits que s'ils valent quelque chose ; « sorte » (ce que le texte représente : produit, prenom-feminin…) vient de ~sorte dans --champs et sert aux fabriques ; « defaut » et « regles » sont à l'utilisateur, le Poinçon les lit) :
+//   { "ressource": "Client", "table": "clients", "champs": [ { "nom": "id", "type": "entier", "cle": true }, { "nom": "email", "type": "texte", "nullable": true },
+//                                                              { "nom": "pays_id", "type": "entier", "reference": { "table": "pays", "colonne": "id" } } ] }
+// Les membres du JSON se lisent par j["membre"] : « .type » et « .table » ne sont pas sûrs en OWL (propriétés de JSON, mots réservés).
+// Toute description incorrecte est une exception de code 25 (usage incorrect, code de sortie 2), qui nomme le fichier et le champ.
+EbDescriptionRessource est une CollectionDeProcédures
+
+	// Le chemin relatif du fichier de description de la ressource.
+	PROCEDURE EbCheminDescription(oDemande est un cEbDemandeMake) : chaîne
+		RENVOYER "app/domaine/" + oDemande.Dossier() + "/ressource.json"
+	FIN
+
+	// Le contenu du fichier : un champ par ligne, en JSON valide, indenté par des tabulations.
+	PROCEDURE EbContenuDescription(oDemande est un cEbDemandeMake) : chaîne
+		oTexte est un cEbTexteCode
+		oTexte.Ligne(0, "{")
+		oTexte.Ligne(1, EbJsonChaine("ressource") + ": " + EbJsonChaine(oDemande.Nom()) + ",")
+		oTexte.Ligne(1, EbJsonChaine("table") + ": " + EbJsonChaine(oDemande.NomTable()) + ",")
+		oTexte.Ligne(1, EbJsonChaine("champs") + ": [")
+		nNb est un entier = oDemande.Champs()..Occurrence
+		POUR i = 1 À nNb
+			oChamp est un cEbChampTable = oDemande.Champs()[i]
+			sLigne est une chaîne       = "{ " + EbJsonChaine("nom") + ": " + EbJsonChaine(oChamp.NomColonne()) + ", " + EbJsonChaine("type") + ": " + EbJsonChaine(oChamp.TypeChamp())
+			SI oChamp.Cle() ALORS
+				sLigne += ", " + EbJsonChaine("cle") + ": true"
+			FIN
+			SI oChamp.Nullable() ALORS
+				sLigne += ", " + EbJsonChaine("nullable") + ": true"
+			FIN
+			SI oChamp.Sorte() <> "" ALORS
+				sLigne += ", " + EbJsonChaine("sorte") + ": " + EbJsonChaine(oChamp.Sorte())
+			FIN
+			SI oChamp.ARef() ALORS
+				sLigne += ", " + EbJsonChaine("reference") + ": { " + EbJsonChaine("table") + ": " + EbJsonChaine(oChamp.RefTable()) + ", " + EbJsonChaine("colonne") + ": " + EbJsonChaine(oChamp.RefColonne()) + " }"
+			FIN
+			sLigne += " }"
+			SI i < nNb ALORS
+				sLigne += ","
+			FIN
+			oTexte.Ligne(2, sLigne)
+		FIN
+		oTexte.Ligne(1, "]")
+		oTexte.Ligne(0, "}")
+		RENVOYER oTexte.Texte()
+	FIN
+
+	// La table que décrit le texte d'un fichier ressource.json, ou « » si le texte n'est pas du JSON, n'a pas de membre « table » ou si ce n'est pas un texte. Ne lève jamais : sert à CHERCHER la description d'une table parmi plusieurs fichiers.
+	PROCEDURE EbTableDeDescription(sTexte est une chaîne) : chaîne
+		SI PAS JSONValide(sTexte) ALORS
+			RENVOYER ""
+		FIN
+		j est un JSON
+		j = ChaîneVersJSON(sTexte)
+		SI PAS JSONExiste(j, "table") ALORS
+			RENVOYER ""
+		FIN
+		SI TypeVar(j["table"]) <> owlChaîne ALORS
+			RENVOYER ""
+		FIN
+		sTable est une chaîne = j["table"]
+		RENVOYER sTable
+	FIN
+
+	// Le texte d'un membre facultatif de type booléen : Faux s'il est absent ; lève (25) s'il n'est pas un booléen. sOu situe le champ dans le message.
+	PROCEDURE EbBooleenDeDescription(v est un JSON, sMembre est une chaîne, sOu est une chaîne) : booléen
+		SI PAS JSONExiste(v, sMembre) ALORS
+			RENVOYER Faux
+		FIN
+		SI TypeVar(v[sMembre]) <> owlBooléen ALORS
+			ExceptionDéclenche(25, sOu + " : « " + sMembre + " » doit valoir true ou false.")
+		FIN
+		bValeur est un booléen = v[sMembre]
+		RENVOYER bValeur
+	FIN
+
+	// Un membre obligatoire de type texte : lève (25) s'il est absent, vide ou d'un autre type.
+	PROCEDURE EbTexteDeDescription(v est un JSON, sMembre est une chaîne, sOu est une chaîne) : chaîne
+		SI PAS JSONExiste(v, sMembre) ALORS
+			ExceptionDéclenche(25, sOu + " : il manque « " + sMembre + " ».")
+		FIN
+		SI TypeVar(v[sMembre]) <> owlChaîne ALORS
+			ExceptionDéclenche(25, sOu + " : « " + sMembre + " » doit être un texte.")
+		FIN
+		sValeur est une chaîne = v[sMembre]
+		SI SansEspace(sValeur) = "" ALORS
+			ExceptionDéclenche(25, sOu + " : « " + sMembre + " » est vide.")
+		FIN
+		RENVOYER sValeur
+	FIN
+
+	// Un champ de la description (l'élément nPos de « champs »). Mêmes règles que la grammaire de --champs (EbAnalyseChamp), avec des messages qui nomment le fichier.
+	PROCEDURE EbChampDeDescription(v est un JSON, nPos est un entier, sOrigine est une chaîne) : cEbChampTable
+		sOu      est une chaîne = sOrigine + " : champs[" + nPos + "]"
+		sColonne est une chaîne = EbTexteDeDescription(v, "nom", sOu)
+		sOu = sOrigine + " : le champ « " + sColonne + " »"
+		sRefus est une chaîne = EbVerifieNomSql(sColonne, "colonne")
+		SI sRefus <> "" ALORS
+			ExceptionDéclenche(25, sOu + " : " + sRefus)
+		FIN
+		sType est une chaîne = EbNormaliseType(EbTexteDeDescription(v, "type", sOu))
+		SI PAS EbValeurDansListe(sType, EbTypesChamp()) ALORS
+			ExceptionDéclenche(25, sOu + " : type inconnu « " + sType + " ». Types acceptés : " + Remplace(EbTypesChamp(), "|", ", ") + ".")
+		FIN
+		bCle      est un booléen = EbBooleenDeDescription(v, "cle", sOu)
+		bNullable est un booléen = EbBooleenDeDescription(v, "nullable", sOu)
+		SI bCle ET bNullable ALORS
+			ExceptionDéclenche(25, sOu + " : une clé primaire ne peut pas accepter NULL (« cle » et « nullable » ensemble).")
+		FIN
+		sRefTable   est une chaîne = ""
+		sRefColonne est une chaîne = ""
+		// Déclarés avant le SI : une déclaration dans une branche non exécutée a corrompu des variables locales en OWL 1.6.0.
+		jRef          est un JSON
+		tabPartiesRef est un tableau de chaînes
+		SI JSONExiste(v, "reference") ALORS
+			jRef          = v["reference"]
+			sRefTable     = EbTexteDeDescription(jRef, "table", sOu + " : reference")
+			sRefColonne   = EbTexteDeDescription(jRef, "colonne", sOu + " : reference")
+			tabPartiesRef = ChaîneDécoupe(sRefTable, ".")
+			SI tabPartiesRef..Occurrence > 2 ALORS
+				ExceptionDéclenche(25, sOu + " : reference.table « " + sRefTable + " » a trop de points. Formes : table ou schema.table.")
+			FIN
+			POUR TOUT sPartieRef DE tabPartiesRef
+				EbExigeNomSql(sPartieRef, "table référencée")
+			FIN
+			EbExigeNomSql(sRefColonne, "colonne référencée")
+		FIN
+		tabMots est un tableau de chaînes = EbMotsDe(sColonne)
+		SI tabMots..Occurrence = 0 ALORS
+			ExceptionDéclenche(25, sOu + " : le nom n'a ni lettre ni chiffre latin : ebony n'en tire aucun identifiant. Renommez la colonne.")
+		FIN
+		sSorte est une chaîne = ""
+		SI JSONExiste(v, "sorte") ALORS
+			sSorte = EbTexteDeDescription(v, "sorte", sOu)
+			SI PAS EbValeurDansListe(sSorte, EbSortesChamp()) ALORS
+				ExceptionDéclenche(25, sOu + " : sorte inconnue « " + sSorte + " ». Sortes acceptées : " + Remplace(EbSortesChamp(), "|", ", ") + ".")
+			FIN
+			SI sType <> "texte" ALORS
+				ExceptionDéclenche(25, sOu + " : la sorte « " + sSorte + " » ne s'applique qu'à un champ de type texte.")
+			FIN
+		FIN
+		oChamp est un cEbChampTable(sColonne, sType, bNullable, bCle, sRefTable, sRefColonne, EbPascalDe(tabMots), EbJointMots(tabMots, "_"), sSorte)
+		RENVOYER oChamp
+	FIN
+
+	// Les champs que décrit le texte d'un fichier ressource.json, dans l'ordre. sOrigine (le chemin du fichier) ne sert qu'aux messages. Lève (25) si le JSON est invalide, si « champs » manque ou est vide,
+	// ou si les champs ne forment pas une table acceptable (une clé primaire, au moins un autre champ, pas deux colonnes de même identifiant : mêmes règles que --champs).
+	PROCEDURE EbChampsDeDescription(sTexte est une chaîne, sOrigine est une chaîne) : tableau de cEbChampTable
+		tabChamps est un tableau de cEbChampTable
+		SI PAS JSONValide(sTexte) ALORS
+			ExceptionDéclenche(25, sOrigine + " n'est pas du JSON valide.")
+		FIN
+		j est un JSON
+		j = ChaîneVersJSON(sTexte)
+		SI PAS JSONExiste(j, "champs") ALORS
+			ExceptionDéclenche(25, sOrigine + " : il manque « champs » (la liste des champs de la ressource).")
+		FIN
+		nPos est un entier = 0
+		POUR TOUT v DE j.champs
+			nPos++
+			SI Gauche(JSONVersChaîne(v, psdMinifie), 1) <> "{" ALORS
+				ExceptionDéclenche(25, sOrigine + " : champs[" + nPos + "] doit être un objet { nom, type, … }.")
+			FIN
+			oChamp est un cEbChampTable = EbChampDeDescription(v, nPos, sOrigine)
+			TableauAjoute(tabChamps, oChamp)
+		FIN
+		EbVerifieChamps(tabChamps, sOrigine)
+		RENVOYER tabChamps
+	FIN
+FIN

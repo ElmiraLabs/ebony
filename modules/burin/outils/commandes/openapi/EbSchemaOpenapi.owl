@@ -1,0 +1,123 @@
+// Les correspondances entre ce que décrit ressource.json et ce que dit un document OpenAPI 3.0 : types, formats, mots des règles. Fonctions pures, testées dans tests/unitaires/commandes/openapi/.
+EbSchemaOpenapi est une CollectionDeProcédures
+
+	// Le type OpenAPI d'un type de champ d'ebony (entier, texte, reel, booleen, date, dateheure). Un type inconnu devient « string » : une description a déjà été contrôlée avant d'arriver ici.
+	PROCEDURE EbTypeOpenapi(sTypeChamp est une chaîne) : chaîne
+		SI sTypeChamp = "entier" ALORS
+			RENVOYER "integer"
+		FIN
+		SI sTypeChamp = "reel" ALORS
+			RENVOYER "number"
+		FIN
+		SI sTypeChamp = "booleen" ALORS
+			RENVOYER "boolean"
+		FIN
+		RENVOYER "string"
+	FIN
+
+	// Le format OpenAPI d'un type de champ, ou « » s'il n'y en a pas (texte, booléen).
+	PROCEDURE EbFormatOpenapi(sTypeChamp est une chaîne) : chaîne
+		SI sTypeChamp = "entier" ALORS
+			RENVOYER "int64"
+		FIN
+		SI sTypeChamp = "reel" ALORS
+			RENVOYER "double"
+		FIN
+		SI sTypeChamp = "date" ALORS
+			RENVOYER "date"
+		FIN
+		SI sTypeChamp = "dateheure" ALORS
+			RENVOYER "date-time"
+		FIN
+		RENVOYER ""
+	FIN
+
+	// Le mot OpenAPI d'une règle du Poinçon (longueurMin, longueurMax, valeurs, motif, min, max) pour un type de champ, ou « » si elle ne s'exprime pas en OpenAPI pour ce type.
+	PROCEDURE EbMotOpenapi(sTypeChamp est une chaîne, sRegle est une chaîne) : chaîne
+		SI sTypeChamp = "texte" ALORS
+			SI sRegle = "longueurMin" ALORS
+				RENVOYER "minLength"
+			FIN
+			SI sRegle = "longueurMax" ALORS
+				RENVOYER "maxLength"
+			FIN
+			SI sRegle = "valeurs" ALORS
+				RENVOYER "enum"
+			FIN
+			SI sRegle = "motif" ALORS
+				RENVOYER "pattern"
+			FIN
+		FIN
+		SI sTypeChamp = "entier" ALORS
+			SI sRegle = "min" ALORS
+				RENVOYER "minimum"
+			FIN
+			SI sRegle = "max" ALORS
+				RENVOYER "maximum"
+			FIN
+			SI sRegle = "valeurs" ALORS
+				RENVOYER "enum"
+			FIN
+		FIN
+		SI sTypeChamp = "reel" ALORS
+			SI sRegle = "min" ALORS
+				RENVOYER "minimum"
+			FIN
+			SI sRegle = "max" ALORS
+				RENVOYER "maximum"
+			FIN
+		FIN
+		RENVOYER ""
+	FIN
+
+	// Un nom utilisable dans un identifiant OpenAPI (opération, schéma) : les lettres ASCII, les chiffres et le souligné du nom de la ressource ; s'il n'en reste rien (nom fait de signes), le nom du dossier de la ressource, puis « Ressource ».
+	PROCEDURE EbNomOpenapi(sNom est une chaîne, sDossier est une chaîne) : chaîne
+		sAutorises est une chaîne = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
+		sResultat  est une chaîne = ""
+		sCar       est une chaîne = ""
+		POUR i = 1 À Taille(sNom)
+			sCar = Milieu(sNom, i, 1)
+			SI Position(sAutorises, sCar) > 0 ALORS
+				sResultat += sCar
+			FIN
+		FIN
+		SI sResultat = "" ALORS
+			POUR i = 1 À Taille(sDossier)
+				sCar = Milieu(sDossier, i, 1)
+				SI Position(sAutorises, sCar) > 0 ALORS
+					sResultat += sCar
+				FIN
+			FIN
+		FIN
+		SI sResultat = "" ALORS
+			sResultat = "Ressource"
+		FIN
+		RENVOYER sResultat
+	FIN
+
+	// Vrai si le texte est un nombre JSON simple (entier ou décimal, signe facultatif) : ce qu'une valeur numérique écrite telle quelle dans le document doit être.
+	PROCEDURE EbNombreOpenapi(sTexte est une chaîne) : booléen
+		SI sTexte = "" ALORS
+			RENVOYER Faux
+		FIN
+		nDebut est un entier = 1
+		SI Gauche(sTexte, 1) = "-" ALORS
+			nDebut = 2
+		FIN
+		nPoints   est un entier  = 0
+		nChiffres est un entier  = 0
+		sCar      est une chaîne = ""
+		POUR i = nDebut À Taille(sTexte)
+			sCar = Milieu(sTexte, i, 1)
+			SI sCar = "." ALORS
+				nPoints++
+			SINON
+				SI Position("0123456789", sCar) = 0 ALORS
+					RENVOYER Faux
+				FIN
+				nChiffres++
+			FIN
+		FIN
+		RENVOYER nPoints <= 1 ET nChiffres > 0
+	FIN
+FIN

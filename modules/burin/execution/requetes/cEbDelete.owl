@@ -1,0 +1,84 @@
+// Un DELETE en cours de construction : db.Del(produits).Where(produits.Id.Eq(3)).ToSQL(). (« Delete » est un mot refusé par OWL pour une méthode : Burin dit « Del », comme Lucid.)
+// GARDE-FOU : un Del SANS condition est refusé (7008), sauf demande explicite par ForAllRows() : une table entière effacée par un Where oublié est le pire accident possible. Une condition vide (des filtres facultatifs
+// tous absents) compte pour « pas de condition ». ForAllRows() avec une condition est contradictoire, donc refusé aussi (7008).
+cEbDelete est une Classe
+PRIVÉ
+	oDialecte  est un iEbDialecteSql
+	oTable     est un cEbTable
+	oCondition est un cEbSql
+	bCondition est un booléen        = Faux
+	bToutes    est un booléen        = Faux
+	tabRetour  est un tableau
+
+	PROCEDURE Constructeur(Dialecte est un iEbDialecteSql, TableCible est un cEbTable)
+		:oDialecte = Dialecte
+		:oTable = TableCible
+	FIN
+
+	// La condition (cEbSql). Remplace la précédente ; une condition vide est ignorée (et laisse le Del sans condition : voir le garde-fou).
+	PROCEDURE PUBLIQUE Where(oExpression est un cEbSql) : cEbDelete
+		SI oExpression.Vide() ALORS
+			:bCondition = Faux
+		SINON
+			:oCondition = oExpression
+			:bCondition = Vrai
+		FIN
+		RENVOYER objet
+	FIN
+
+	// Ajoute une condition à la précédente par AND ; sans condition précédente, c'est la condition. Une condition vide est ignorée.
+	PROCEDURE PUBLIQUE AndWhere(oExpression est un cEbSql) : cEbDelete
+		:Combine(" AND ", oExpression)
+		RENVOYER objet
+	FIN
+
+	// Ajoute une condition à la précédente par OR ; sans condition précédente, c'est la condition. Une condition vide est ignorée.
+	PROCEDURE PUBLIQUE OrWhere(oExpression est un cEbSql) : cEbDelete
+		:Combine(" OR ", oExpression)
+		RENVOYER objet
+	FIN
+
+	PROCEDURE Combine(sOperateur est une chaîne, oExpression est un cEbSql)
+		SI oExpression.Vide() ALORS
+			RETOUR
+		FIN
+		:oCondition = EbJointCondition(sOperateur, :oCondition, :bCondition, oExpression)
+		:bCondition = Vrai
+	FIN
+
+	// Demande explicitement d'effacer TOUTES les lignes de la table : la seule façon d'écrire un Del sans condition.
+	PROCEDURE PUBLIQUE ForAllRows() : cEbDelete
+		:bToutes = Vrai
+		RENVOYER objet
+	FIN
+
+	// Demande que la base rende cette colonne pour chaque ligne effacée (RETURNING), sous l'alias « table__colonne ». Lève (7001) pour une colonne d'une autre table.
+	PROCEDURE PUBLIQUE Returning(oColonne est un cEbColonne) : cEbDelete
+		EbVerifieColonneDeLaTable(:oTable, oColonne, "Returning")
+		TableauAjoute(:tabRetour, oColonne)
+		RENVOYER objet
+	FIN
+
+	// Le texte SQL et ses paramètres, sans aucune base. Lève (7001) pour une colonne d'une autre table dans la condition, (7008) pour un Del sans condition et sans ForAllRows().
+	PROCEDURE PUBLIQUE ToSQL() : cEbRequete
+		SI :bCondition ALORS
+			EbVerifieColonnes(:oTable, :oCondition)
+			SI :bToutes ALORS
+				ExceptionDéclenche(7008, "Del(" + :oTable.Nom() + ") refusé : ForAllRows() demande d'effacer toutes les lignes, mais une condition est donnée. Retirez l'un des deux.")
+			FIN
+		SINON
+			SI PAS :bToutes ALORS
+				ExceptionDéclenche(7008, "Del(" + :oTable.Nom() + ") refusé : aucune condition, donc toutes les lignes seraient effacées. Ajoutez un Where(), ou appelez ForAllRows() si c'est voulu. (Une condition vide, des filtres facultatifs tous absents, compte pour aucune condition.)")
+			FIN
+		FIN
+		oSql est un cEbSql
+		oSql.AjouteTexte("DELETE FROM ")
+		oSql.AjouteNomTable(:oTable.Nom())
+		SI :bCondition ALORS
+			oSql.AjouteTexte(" WHERE ")
+			oSql.AjouteSql(:oCondition)
+		FIN
+		oSql.AjouteTexte(EbFinRetour(:oDialecte, :tabRetour))
+		RENVOYER oSql.Construit(:oDialecte)
+	FIN
+FIN

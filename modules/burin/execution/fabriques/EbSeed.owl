@@ -1,0 +1,22 @@
+// Le garde du remplissage de la base (seed) : un seeder remplit la base avec des données d'exemple, il ne doit jamais tourner contre une base de production.
+// Le réglage APP_ENV (.env, déclaré par le module burin : developpement, test ou production) décide. En cas de doute on refuse, comme AUTH_ROUTES : SEULES les valeurs « developpement » et « test » (majuscules et espaces ignorés) autorisent ;
+// production, une faute de frappe, une valeur vide ou une variable absente du schéma d'un ancien projet (config/env.json écrit avant APP_ENV : ajoutez-la) refusent.
+EbSeed est une CollectionDeProcédures
+
+	// Vrai si le réglage APP_ENV autorise le remplissage : seulement « developpement » ou « test ».
+	PROCEDURE EbSeedAutorise(sReglage est une chaîne) : booléen
+		sNormal est une chaîne = Minuscule(SansEspace(sReglage))
+		RENVOYER (sNormal = "developpement") OU (sNormal = "test")
+	FIN
+
+	// Lève l'exception 7012 si le réglage n'autorise pas le remplissage ; le message dit pourquoi et que faire.
+	PROCEDURE EbSeedExigeDeveloppement(sReglage est une chaîne)
+		SI EbSeedAutorise(sReglage) ALORS
+			RENVOYER
+		FIN
+		SI SansEspace(sReglage) = "" ALORS
+			ExceptionDéclenche(7012, "Remplissage refusé : APP_ENV n'a pas de valeur. Ajoutez APP_ENV=developpement dans .env (et la variable à config/env.json si elle n'y est pas) : en cas de doute, un seeder ne tourne pas.")
+		FIN
+		ExceptionDéclenche(7012, "Remplissage refusé : APP_ENV vaut « " + sReglage + " ». Un seeder ne tourne qu'avec APP_ENV=developpement ou APP_ENV=test.")
+	FIN
+FIN

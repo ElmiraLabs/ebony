@@ -1,0 +1,16 @@
+{
+	"commandes": [
+		{ "noms": ["", "aide"], "procedure": "EbAfficheAide" },
+		{ "noms": ["version"], "procedure": "EbExecuteVersion" },
+		{ "noms": ["doctor"], "procedure": "EbExecuteDoctor" },
+		{ "noms": ["new"], "procedure": "EbExecuteNew" },
+		{ "noms": ["init"], "procedure": "EbExecuteInit" },
+		{ "noms": ["add"], "procedure": "EbExecuteAdd" },
+		{ "noms": ["request"], "procedure": "EbExecuteRequest" },
+		{ "noms": ["env"], "procedure": "EbExecuteEnv" },
+		{ "noms": ["install"], "procedure": "EbExecuteInstall" },
+		{ "noms": ["uninstall"], "procedure": "EbExecuteUninstall" },
+		{ "noms": ["restore"], "procedure": "EbExecuteRestore" },
+		{ "noms": ["upgrade"], "procedure": "EbExecuteUpgrade" }
+	]
+}

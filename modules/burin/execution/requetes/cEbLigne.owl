@@ -1,0 +1,127 @@
+// Une ligne rendue par la base, lue COLONNE PAR COLONNE : db.Select().From(produits).ToSQL() puis EbLignesDe(resultat), et ligne.LitTexte(produits.ColonneNommee("nom")).
+// La ligne brute est un tableau associatif indexé par ALIAS « table__colonne » (c'est sous ce nom que la base rend chaque valeur) ; la colonne donne l'alias et la nature, la ligne rend la valeur du bon type OWL.
+// Un NULL devient la valeur par défaut du type (0, 0, Faux, « ») : EstNull(colonne) le distingue d'une vraie valeur. Mesuré (OWL 1.8.1) : un NULL affecté à une variable CHAÎNE typée reste Null, d'où la conversion ici ;
+// c'est ce qui évite au code généré de déclarer une variable par champ.
+// Ce qui est refusé, avec le code 7010, au lieu d'un défaut silencieux : une colonne qui n'a pas été sélectionnée (alias absent de la ligne), un accesseur qui ne correspond pas à la nature de la colonne
+// (LitEntier sur une colonne de texte), et un type de valeur que la base n'aurait pas dû rendre pour cette nature. Les types lus sont ceux mesurés (SQLite : entier, réel, texte ; un booléen revient 0 ou 1).
+cEbLigne est une Classe
+PRIVÉ
+	tabBrute est un tableau associatif
+
+	PROCEDURE Constructeur(brute est un tableau associatif)
+		POUR TOUT vBrute, sCle DE brute
+			:tabBrute[sCle] = vBrute
+		FIN
+	FIN
+
+	// La valeur brute de la colonne, sous son alias. Lève (7010) si cette colonne n'a pas été sélectionnée.
+	PROCEDURE ValeurBrute(oColonne est un cEbColonne) : JSON
+		sAlias est une chaîne = oColonne.NomTable() + "__" + oColonne.Nom()
+		SI TableauCherche(:tabBrute, sAlias) < 1 ALORS
+			ExceptionDéclenche(7010, "La colonne " + oColonne.Reference() + " n'est pas dans cette ligne (alias « " + sAlias + " » absent) : elle n'a pas été sélectionnée.")
+		FIN
+		RENVOYER :tabBrute[sAlias]
+	FIN
+
+	// Lève (7010) si l'accesseur ne convient pas à la nature de la colonne. sNatures : les natures permises, séparées par « | ».
+	PROCEDURE ExigeNature(oColonne est un cEbColonne, sAccesseur est une chaîne, sNatures est une chaîne)
+		SI Position("|" + sNatures + "|", "|" + oColonne.Nature() + "|") < 1 ALORS
+			ExceptionDéclenche(7010, sAccesseur + "() ne lit pas " + oColonne.Reference() + " : cette colonne est de nature « " + oColonne.Nature() + " » (" + sAccesseur + " lit : " + sNatures + ").")
+		FIN
+	FIN
+
+	// Lève (7010) pour une valeur d'un type que cette colonne ne devrait pas rendre.
+	PROCEDURE Refuse(oColonne est un cEbColonne, valeur est un JSON)
+		ExceptionDéclenche(7010, "La valeur lue pour " + oColonne.Reference() + " est de type « " + EbNomTypeValeur(valeur) + " », que la nature « " + oColonne.Nature() + " » ne rend pas : la base n'a pas rendu ce que le schéma annonce.")
+	FIN
+
+	// Vrai si la valeur de la colonne est NULL dans cette ligne. Lève (7010) si la colonne n'a pas été sélectionnée.
+	PROCEDURE PUBLIQUE EstNull(oColonne est un cEbColonne) : booléen
+		RENVOYER TypeVar(:ValeurBrute(oColonne)) = 0
+	FIN
+
+	// Une colonne de nature « entier » : 0 pour NULL.
+	PROCEDURE PUBLIQUE LitEntier(oColonne est un cEbColonne) : entier
+		:ExigeNature(oColonne, "LitEntier", "entier")
+		valeur est un JSON   = :ValeurBrute(oColonne)
+		nType  est un entier = TypeVar(valeur)
+		nRes   est un entier = 0
+		SI nType = owlEntier ALORS
+			nRes = valeur
+		SINON
+			SI nType <> 0 ALORS
+				:Refuse(oColonne, valeur)
+			FIN
+		FIN
+		RENVOYER nRes
+	FIN
+
+	// Une colonne de nature « reel » : 0 pour NULL ; un entier rendu par la base est lu comme réel.
+	PROCEDURE PUBLIQUE LitReel(oColonne est un cEbColonne) : réel
+		:ExigeNature(oColonne, "LitReel", "reel")
+		valeur est un JSON   = :ValeurBrute(oColonne)
+		nType  est un entier = TypeVar(valeur)
+		rRes   est un réel   = 0
+		SI nType = owlRéel OU nType = owlEntier ALORS
+			rRes = valeur
+		SINON
+			SI nType <> 0 ALORS
+				:Refuse(oColonne, valeur)
+			FIN
+		FIN
+		RENVOYER rRes
+	FIN
+
+	// Une colonne de nature « texte » : « » pour NULL.
+	PROCEDURE PUBLIQUE LitTexte(oColonne est un cEbColonne) : chaîne
+		:ExigeNature(oColonne, "LitTexte", "texte")
+		valeur est un JSON    = :ValeurBrute(oColonne)
+		nType  est un entier  = TypeVar(valeur)
+		sRes   est une chaîne = ""
+		SI nType = owlChaîne ALORS
+			sRes = valeur
+		SINON
+			SI nType <> 0 ALORS
+				:Refuse(oColonne, valeur)
+			FIN
+		FIN
+		RENVOYER sRes
+	FIN
+
+	// Une colonne de nature « booleen » : Faux pour NULL. SQLite rend 0 ou 1 (pas de type booléen) ; une autre valeur entière est refusée.
+	PROCEDURE PUBLIQUE LitBooleen(oColonne est un cEbColonne) : booléen
+		:ExigeNature(oColonne, "LitBooleen", "booleen")
+		valeur est un JSON    = :ValeurBrute(oColonne)
+		nType  est un entier  = TypeVar(valeur)
+		bRes   est un booléen = Faux
+		SI nType = owlBooléen ALORS
+			bRes = valeur
+		SINON
+			SI nType = owlEntier ET (valeur = 0 OU valeur = 1) ALORS
+				bRes = (valeur = 1)
+			SINON
+				SI nType <> 0 ALORS
+					:Refuse(oColonne, valeur)
+				FIN
+			FIN
+		FIN
+		RENVOYER bRes
+	FIN
+
+	// Une colonne de nature « date » ou « dateheure », lue comme le TEXTE ISO que la base a rendu (SQLite les stocke en texte) : « » pour NULL. Une valeur qui n'est pas du texte est refusée : le type date
+	// d'OWL n'est pas encore mesuré avec PostgreSQL, on ne le devine pas.
+	PROCEDURE PUBLIQUE LitDate(oColonne est un cEbColonne) : chaîne
+		:ExigeNature(oColonne, "LitDate", "date|dateheure")
+		valeur est un JSON    = :ValeurBrute(oColonne)
+		nType  est un entier  = TypeVar(valeur)
+		sRes   est une chaîne = ""
+		SI nType = owlChaîne ALORS
+			sRes = valeur
+		SINON
+			SI nType <> 0 ALORS
+				:Refuse(oColonne, valeur)
+			FIN
+		FIN
+		RENVOYER sRes
+	FIN
+FIN

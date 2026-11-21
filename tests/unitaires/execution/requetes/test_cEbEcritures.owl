@@ -1,0 +1,253 @@
+// Tests de cEbInsert, cEbUpdate et cEbDelete : le texte SQL et les paramètres rendus par ToSQL() (sans aucune base), les valeurs vérifiées contre leur colonne, et le GARDE-FOU : un Update ou un Del sans condition est refusé (7008).
+// Une ligne à écrire est un tableau associatif colonne -> valeur. Les colonnes écrites sortent dans l'ordre de la table, quel que soit l'ordre où l'appelant les a données.
+
+// Une ligne de la table produits : nom, prix.
+PROCEDURE EbTestLigneProduit(sNom est une chaîne, rPrix est un JSON) : tableau associatif
+	tabLigne est un tableau associatif
+	tabLigne["prix"] = rPrix
+	tabLigne["nom"] = sNom
+	RENVOYER tabLigne
+FIN
+
+// Ajoute la ligne à l'INSERT et rend « code|message » si Values() lève, ou « » s'il réussit.
+PROCEDURE EbTestRefusValues(oInsert est un cEbInsert, ligne est un tableau associatif) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oInsert.Values(ligne)
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Donne la ligne à l'UPDATE et rend « code|message » si Set() lève, ou « » s'il réussit.
+PROCEDURE EbTestRefusSet(oUpdate est un cEbUpdate, ligne est un tableau associatif) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oUpdate.Set(ligne)
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Lance ToSQL() de l'INSERT, de l'UPDATE ou du DELETE (sQuoi : « insert », « update », « delete ») et rend « code|message » s'il lève, ou « » s'il réussit.
+PROCEDURE EbTestRefusEcriture(sQuoi est une chaîne, oInsert est un cEbInsert, oUpdate est un cEbUpdate, oDelete est un cEbDelete) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		SELON sQuoi
+			CAS "insert"
+			oInsert.ToSQL()
+			CAS "update"
+			oUpdate.ToSQL()
+			CAS "delete"
+			oDelete.ToSQL()
+		FIN
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Un INSERT : les colonnes sortent dans l'ordre de la table (ici nom puis prix, alors que la ligne a donné prix puis nom), chaque valeur est un paramètre.
+PROCEDURE scenario_insert_une_ligne()
+	oBurin    est un cEbBurin           = EbTestBurin()
+	oProduits est un cEbTable           = EbTestProduits()
+	oRequete  est un cEbRequete         = oBurin.Insert(oProduits).Values(EbTestLigneProduit("café", 12.5)).ToSQL()
+	tabP      est un tableau associatif = oRequete.Parametres()
+	dbgVérifieEgalité(oRequete.Texte(), `INSERT INTO "produits" ("nom", "prix") VALUES ({p1}, {p2})`, "colonnes dans l'ordre de la table")
+	dbgVérifieEgalité(tabP["p1"], "café", "le nom est le premier paramètre")
+	dbgVérifieEgalité(tabP["p2"], 12.5, "le prix est le second")
+FIN
+
+// Plusieurs lignes : un seul INSERT, un groupe de valeurs par ligne, la numérotation des paramètres continue ; toutes écrivent les mêmes colonnes.
+PROCEDURE scenario_insert_plusieurs_lignes()
+	oBurin    est un cEbBurin  = EbTestBurin()
+	oProduits est un cEbTable  = EbTestProduits()
+	oInsert   est un cEbInsert = oBurin.Insert(oProduits)
+	oInsert.Values(EbTestLigneProduit("café", 12.5)).Values(EbTestLigneProduit("thé", 8))
+	oRequete est un cEbRequete = oInsert.ToSQL()
+	dbgVérifieEgalité(oRequete.Texte(), `INSERT INTO "produits" ("nom", "prix") VALUES ({p1}, {p2}), ({p3}, {p4})`, "deux lignes")
+	dbgVérifieEgalité(oRequete.NbParametres(), 4, "quatre valeurs")
+FIN
+
+// Returning : la base rend la colonne demandée sous l'alias « table__colonne », comme un SELECT.
+PROCEDURE scenario_insert_returning()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oId       est un cEbColonne = oProduits.ColonneNommee("id")
+	oRequete  est un cEbRequete = oBurin.Insert(oProduits).Values(EbTestLigneProduit("café", 12.5)).Returning(oId).ToSQL()
+	dbgVérifieEgalité(oRequete.Texte(), `INSERT INTO "produits" ("nom", "prix") VALUES ({p1}, {p2}) RETURNING "id" AS "produits__id"`, "RETURNING avec alias")
+FIN
+
+// Une valeur d'INSERT est vérifiée contre sa colonne, tout de suite : Null est permis pour une colonne qui accepte NULL, refusé pour une colonne NOT NULL ; un mauvais type est refusé.
+PROCEDURE scenario_insert_valeurs_verifiees()
+	oBurin    est un cEbBurin           = EbTestBurin()
+	oProduits est un cEbTable           = EbTestProduits()
+	oNul      est un cEbRequete         = oBurin.Insert(oProduits).Values(EbTestLigneProduit("café", Null)).ToSQL()
+	tabP      est un tableau associatif = oNul.Parametres()
+	dbgVérifieEgalité(TypeVar(tabP["p2"]), 0, "Null passé pour une colonne qui accepte NULL")
+	sRes est une chaîne = EbTestRefusValues(oBurin.Insert(oProduits), EbTestLigneProduit(Null, 5))
+	dbgVérifieEgalité(Gauche(sRes, 5), "7002|", "Null pour une colonne NOT NULL")
+	dbgVérifieVrai(Position(sRes, "produits.nom") > 0 ET Position(sRes, "NULL") > 0, "le message cite la colonne : " + sRes)
+	dbgVérifieEgalité(Gauche(EbTestRefusValues(oBurin.Insert(oProduits), EbTestLigneProduit("café", "cher")), 5), "7002|", "texte pour un réel")
+	dbgVérifieEgalité(EbTestRefusValues(oBurin.Insert(oProduits), EbTestLigneProduit("café", 12)), "", "entier pour un réel : accepté")
+FIN
+
+// Les autres refus d'un INSERT : colonne inconnue (7001), ligne vide (7002), lignes qui n'écrivent pas les mêmes colonnes (7002), Returning d'une autre table (7001), aucune ligne (7006).
+PROCEDURE scenario_insert_refus()
+	oBurin      est un cEbBurin           = EbTestBurin()
+	oProduits   est un cEbTable           = EbTestProduits()
+	oCategories est un cEbTable           = EbTestCategories()
+	tabInconnue est un tableau associatif
+	tabInconnue["couleur"] = "rouge"
+	sRes est une chaîne = EbTestRefusValues(oBurin.Insert(oProduits), tabInconnue)
+	dbgVérifieEgalité(Gauche(sRes, 5), "7001|", "colonne inconnue")
+	dbgVérifieVrai(Position(sRes, "couleur") > 0 ET Position(sRes, "produits") > 0, "la colonne et la table sont citées : " + sRes)
+	tabVide est un tableau associatif
+	dbgVérifieEgalité(Gauche(EbTestRefusValues(oBurin.Insert(oProduits), tabVide), 5), "7002|", "ligne vide")
+	oDeux est un cEbInsert = oBurin.Insert(oProduits)
+	oDeux.Values(EbTestLigneProduit("café", 12.5))
+	tabSansPrix est un tableau associatif
+	tabSansPrix["nom"] = "thé"
+	sDiff est une chaîne = EbTestRefusValues(oDeux, tabSansPrix)
+	dbgVérifieEgalité(Gauche(sDiff, 5), "7002|", "lignes qui n'écrivent pas les mêmes colonnes")
+	dbgVérifieVrai(Position(sDiff, "ligne 2") > 0, "le message dit quelle ligne : " + sDiff)
+	oCatId est un cEbColonne = oCategories.ColonneNommee("id")
+	sRet   est une chaîne    = ""
+	QUAND EXCEPTION DANS
+		oBurin.Insert(oProduits).Returning(oCatId)
+	FAIRE
+		sRet = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sRet, "7001", "Returning d'une colonne d'une autre table")
+	oSansLigne  est un cEbInsert = oBurin.Insert(oProduits)
+	oSansUpdate est un cEbUpdate = oBurin.Update(oProduits)
+	oSansDel    est un cEbDelete = oBurin.Del(oProduits)
+	dbgVérifieEgalité(Gauche(EbTestRefusEcriture("insert", oSansLigne, oSansUpdate, oSansDel), 5), "7006|", "aucune ligne")
+FIN
+
+// La casse du nom de colonne ne compte pas : « NOM » est la colonne « nom », qui sort sous son nom de table.
+PROCEDURE scenario_insert_casse_du_nom_de_colonne()
+	oBurin    est un cEbBurin           = EbTestBurin()
+	oProduits est un cEbTable           = EbTestProduits()
+	tabLigne  est un tableau associatif
+	tabLigne["NOM"] = "café"
+	oRequete est un cEbRequete = oBurin.Insert(oProduits).Values(tabLigne).ToSQL()
+	dbgVérifieEgalité(oRequete.Texte(), `INSERT INTO "produits" ("nom") VALUES ({p1})`, "la colonne est écrite avec le nom de la table")
+FIN
+
+// Un UPDATE : Set puis Where ; la numérotation suit l'ordre du SQL (les valeurs à écrire, puis la condition).
+PROCEDURE scenario_update_avec_condition()
+	oBurin    est un cEbBurin           = EbTestBurin()
+	oProduits est un cEbTable           = EbTestProduits()
+	oId       est un cEbColonne         = oProduits.ColonneNommee("id")
+	oRequete  est un cEbRequete         = oBurin.Update(oProduits).Set(EbTestLigneProduit("café", 13)).Where(oId.Eq(3)).ToSQL()
+	tabP      est un tableau associatif = oRequete.Parametres()
+	dbgVérifieEgalité(oRequete.Texte(), `UPDATE "produits" SET "nom" = {p1}, "prix" = {p2} WHERE "produits"."id" = {p3}`, "UPDATE avec condition")
+	dbgVérifieEgalité(tabP["p3"], 3, "la condition vient après les valeurs écrites")
+	oAnd est un cEbRequete = oBurin.Update(oProduits).Set(EbTestLigneProduit("café", 13)).Where(oId.Gt(1)).AndWhere(oId.Lt(9)).ToSQL()
+	dbgVérifieEgalité(oAnd.Texte(), `UPDATE "produits" SET "nom" = {p1}, "prix" = {p2} WHERE ("produits"."id" > {p3} AND "produits"."id" < {p4})`, "AndWhere")
+	oRetour est un cEbRequete = oBurin.Update(oProduits).Set(EbTestLigneProduit("café", 13)).Where(oId.Eq(3)).Returning(oId).ToSQL()
+	dbgVérifieEgalité(oRetour.Texte(), `UPDATE "produits" SET "nom" = {p1}, "prix" = {p2} WHERE "produits"."id" = {p3} RETURNING "id" AS "produits__id"`, "Returning")
+FIN
+
+// Set vérifie ses valeurs comme Values ; un nouvel appel remplace le précédent ; un Update sans valeur est incomplet (7006).
+PROCEDURE scenario_update_set()
+	oBurin    est un cEbBurin           = EbTestBurin()
+	oProduits est un cEbTable           = EbTestProduits()
+	oId       est un cEbColonne         = oProduits.ColonneNommee("id")
+	tabNom    est un tableau associatif
+	tabNom["nom"] = "thé"
+	oRemplace est un cEbRequete = oBurin.Update(oProduits).Set(EbTestLigneProduit("café", 13)).Set(tabNom).Where(oId.Eq(1)).ToSQL()
+	dbgVérifieEgalité(oRemplace.Texte(), `UPDATE "produits" SET "nom" = {p1} WHERE "produits"."id" = {p2}`, "le second Set remplace le premier")
+	dbgVérifieEgalité(Gauche(EbTestRefusSet(oBurin.Update(oProduits), EbTestLigneProduit(Null, 5)), 5), "7002|", "Null pour une colonne NOT NULL")
+	dbgVérifieEgalité(Gauche(EbTestRefusSet(oBurin.Update(oProduits), EbTestLigneProduit("café", "cher")), 5), "7002|", "mauvais type")
+	tabInconnue est un tableau associatif
+	tabInconnue["couleur"] = "rouge"
+	dbgVérifieEgalité(Gauche(EbTestRefusSet(oBurin.Update(oProduits), tabInconnue), 5), "7001|", "colonne inconnue")
+	oSansSet est un cEbUpdate = oBurin.Update(oProduits).Where(oId.Eq(1))
+	oRienI   est un cEbInsert = oBurin.Insert(oProduits)
+	oRienD   est un cEbDelete = oBurin.Del(oProduits)
+	dbgVérifieEgalité(Gauche(EbTestRefusEcriture("update", oRienI, oSansSet, oRienD), 5), "7006|", "Update sans Set")
+FIN
+
+// LE GARDE-FOU d'UPDATE : sans condition, refusé (7008) ; une condition vide (tous les filtres facultatifs absents) compte pour aucune ; ForAllRows() est la seule porte ; avec une condition, elle est refusée aussi.
+PROCEDURE scenario_update_garde_fou()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oId       est un cEbColonne = oProduits.ColonneNommee("id")
+	oRienI    est un cEbInsert  = oBurin.Insert(oProduits)
+	oRienD    est un cEbDelete  = oBurin.Del(oProduits)
+	oSans     est un cEbUpdate  = oBurin.Update(oProduits).Set(EbTestLigneProduit("café", 13))
+	sRes      est une chaîne    = EbTestRefusEcriture("update", oRienI, oSans, oRienD)
+	dbgVérifieEgalité(Gauche(sRes, 5), "7008|", "sans condition : refusé")
+	dbgVérifieVrai(Position(sRes, "ForAllRows") > 0 ET Position(sRes, "Where") > 0, "le message dit quoi faire : " + sRes)
+	tabAucune est un tableau
+	oVide     est un cEbUpdate = oBurin.Update(oProduits).Set(EbTestLigneProduit("café", 13)).Where(oBurin.AllOf(tabAucune))
+	dbgVérifieEgalité(Gauche(EbTestRefusEcriture("update", oRienI, oVide, oRienD), 5), "7008|", "des filtres facultatifs tous absents : refusé, c'est tout l'intérêt du garde-fou")
+	oToutes est un cEbRequete = oBurin.Update(oProduits).Set(EbTestLigneProduit("café", 13)).ForAllRows().ToSQL()
+	dbgVérifieEgalité(oToutes.Texte(), `UPDATE "produits" SET "nom" = {p1}, "prix" = {p2}`, "ForAllRows : accepté, sans WHERE")
+	oContradiction est un cEbUpdate = oBurin.Update(oProduits).Set(EbTestLigneProduit("café", 13)).Where(oId.Eq(1)).ForAllRows()
+	dbgVérifieEgalité(Gauche(EbTestRefusEcriture("update", oRienI, oContradiction, oRienD), 5), "7008|", "ForAllRows avec une condition : contradictoire")
+FIN
+
+// Un DELETE : « DELETE FROM … WHERE … », Returning possible.
+PROCEDURE scenario_del_avec_condition()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oId       est un cEbColonne = oProduits.ColonneNommee("id")
+	oRequete  est un cEbRequete = oBurin.Del(oProduits).Where(oId.Eq(3)).ToSQL()
+	dbgVérifieEgalité(oRequete.Texte(), `DELETE FROM "produits" WHERE "produits"."id" = {p1}`, "DELETE avec condition")
+	oOu est un cEbRequete = oBurin.Del(oProduits).Where(oId.Eq(1)).OrWhere(oId.Eq(2)).ToSQL()
+	dbgVérifieEgalité(oOu.Texte(), `DELETE FROM "produits" WHERE ("produits"."id" = {p1} OR "produits"."id" = {p2})`, "OrWhere")
+	oRetour est un cEbRequete = oBurin.Del(oProduits).Where(oId.Eq(3)).Returning(oId).ToSQL()
+	dbgVérifieEgalité(oRetour.Texte(), `DELETE FROM "produits" WHERE "produits"."id" = {p1} RETURNING "id" AS "produits__id"`, "Returning")
+FIN
+
+// LE GARDE-FOU de DELETE : le même que celui d'UPDATE.
+PROCEDURE scenario_del_garde_fou()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oId       est un cEbColonne = oProduits.ColonneNommee("id")
+	oRienI    est un cEbInsert  = oBurin.Insert(oProduits)
+	oRienU    est un cEbUpdate  = oBurin.Update(oProduits)
+	oSans     est un cEbDelete  = oBurin.Del(oProduits)
+	sRes      est une chaîne    = EbTestRefusEcriture("delete", oRienI, oRienU, oSans)
+	dbgVérifieEgalité(Gauche(sRes, 5), "7008|", "sans condition : refusé")
+	dbgVérifieVrai(Position(sRes, "ForAllRows") > 0, "le message dit quoi faire : " + sRes)
+	tabAucune est un tableau
+	oVide     est un cEbDelete = oBurin.Del(oProduits).Where(oBurin.AllOf(tabAucune))
+	dbgVérifieEgalité(Gauche(EbTestRefusEcriture("delete", oRienI, oRienU, oVide), 5), "7008|", "des filtres facultatifs tous absents : refusé")
+	oToutes est un cEbRequete = oBurin.Del(oProduits).ForAllRows().ToSQL()
+	dbgVérifieEgalité(oToutes.Texte(), `DELETE FROM "produits"`, "ForAllRows : accepté, sans WHERE")
+	oContradiction est un cEbDelete = oBurin.Del(oProduits).Where(oId.Eq(1)).ForAllRows()
+	dbgVérifieEgalité(Gauche(EbTestRefusEcriture("delete", oRienI, oRienU, oContradiction), 5), "7008|", "ForAllRows avec une condition : contradictoire")
+FIN
+
+// La condition d'un Update ou d'un Del vérifie ses colonnes : celle d'une autre table est refusée (7001).
+PROCEDURE scenario_condition_d_une_autre_table_refusee()
+	oBurin      est un cEbBurin   = EbTestBurin()
+	oProduits   est un cEbTable   = EbTestProduits()
+	oCategories est un cEbTable   = EbTestCategories()
+	oCatId      est un cEbColonne = oCategories.ColonneNommee("id")
+	oRienI      est un cEbInsert  = oBurin.Insert(oProduits)
+	oRienU      est un cEbUpdate  = oBurin.Update(oProduits)
+	oUpdate     est un cEbUpdate  = oBurin.Update(oProduits).Set(EbTestLigneProduit("café", 13)).Where(oCatId.Eq(1))
+	oDelete     est un cEbDelete  = oBurin.Del(oProduits).Where(oCatId.Eq(1))
+	oRienD      est un cEbDelete  = oBurin.Del(oProduits)
+	dbgVérifieEgalité(Gauche(EbTestRefusEcriture("update", oRienI, oUpdate, oRienD), 5), "7001|", "Update : colonne d'une autre table")
+	dbgVérifieEgalité(Gauche(EbTestRefusEcriture("delete", oRienI, oRienU, oDelete), 5), "7001|", "Del : colonne d'une autre table")
+FIN
+
+// Un nouvel objet à chaque appel : deux écritures issues du même db ne partagent rien.
+PROCEDURE scenario_un_objet_neuf_a_chaque_appel()
+	oBurin    est un cEbBurin  = EbTestBurin()
+	oProduits est un cEbTable  = EbTestProduits()
+	oPremier  est un cEbInsert = oBurin.Insert(oProduits)
+	oSecond   est un cEbInsert = oBurin.Insert(oProduits)
+	oPremier.Values(EbTestLigneProduit("café", 12.5))
+	oSecond.Values(EbTestLigneProduit("thé", 8))
+	dbgVérifieEgalité(oPremier.ToSQL().NbParametres(), 2, "le premier n'a qu'une ligne")
+	dbgVérifieEgalité(oSecond.ToSQL().NbParametres(), 2, "le second aussi : rien n'est partagé")
+FIN

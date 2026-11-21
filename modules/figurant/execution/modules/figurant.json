@@ -1,0 +1,5 @@
+{
+	"nom": "figurant",
+	"dependances": ["burin"],
+	"generateur": { "classe": "cEbGenerateurFigurant", "graine": 42 }
+}

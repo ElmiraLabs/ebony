@@ -1,0 +1,153 @@
+// Tests du constructeur de requêtes contre une VRAIE base SQLite en mémoire : le texte et les paramètres que ToSQL() rend sont acceptés par iEbConnexionSql.Envoie, les valeurs gardent leur type, les lignes reviennent
+// sous leurs alias « table__colonne », et une tentative d'injection reste une valeur. (Les tests de cEbSelect, eux, ne lisent que le texte : ils ne prouvent pas ce que la base accepte.)
+
+PROCEDURE EbTestConnexionSelect() : cEbConnexionSqlReelle
+	cnx est une sqlConnexion
+	cnx..Provider = sqlSqlite
+	cnx..Source   = ":memory:"
+	oConnexion est un cEbConnexionSqlReelle(cnx, "SELECT 1")
+	oConnexion.Ouvre()
+	RENVOYER oConnexion
+FIN
+
+gConnexionSelect est un cEbConnexionSqlReelle = EbTestConnexionSelect()
+
+// La base : la table produits, avec trois lignes (dont un prix NULL et un booléen faux), prête pour chaque scénario.
+PROCEDURE avantChaqueTest()
+	gConnexionSelect = EbTestConnexionSelect()
+	tabAucun est un tableau associatif
+	gConnexionSelect.Envoie("CREATE TABLE produits (id INTEGER NOT NULL PRIMARY KEY, nom TEXT NOT NULL, prix REAL, actif INTEGER, cree_le TEXT)", tabAucun)
+	EbTestInsereProduit(1, "café", 12.5, Vrai, "2026-11-01T08:00:00Z")
+	EbTestInsereProduit(2, "thé", 8, Vrai, "2026-11-05T08:00:00Z")
+	EbTestInsereProduit(3, "chocolat", Null, Faux, "2026-11-09T08:00:00Z")
+FIN
+
+PROCEDURE apresChaqueTest()
+	gConnexionSelect.Ferme()
+FIN
+
+// Insère un produit : par l'INSERT d'un constructeur à venir, pas encore écrit ; ici du SQL avec des paramètres nommés, comme le fera Burin.
+PROCEDURE EbTestInsereProduit(nId est un entier, sNom est une chaîne, rPrix est un JSON, bActif est un booléen, sCreeLe est une chaîne)
+	tabP est un tableau associatif
+	tabP["id"] = nId
+	tabP["nom"] = sNom
+	tabP["prix"] = rPrix
+	tabP["actif"] = bActif
+	tabP["cree"] = sCreeLe
+	oResultat est un cEbResultatSql = gConnexionSelect.Envoie("INSERT INTO produits (id, nom, prix, actif, cree_le) VALUES ({id}, {nom}, {prix}, {actif}, {cree})", tabP)
+	dbgVérifieVrai(oResultat.Succes(), "insertion de " + sNom + " : " + oResultat.Message())
+FIN
+
+// Envoie la requête construite et rend le résultat : texte et paramètres, tels que ToSQL() les donne.
+PROCEDURE EbTestEnvoie(oRequete est un cEbRequete) : cEbResultatSql
+	oResultat est un cEbResultatSql = gConnexionSelect.Envoie(oRequete.Texte(), oRequete.Parametres())
+	dbgVérifieVrai(oResultat.Succes(), "la base accepte la requête : " + oResultat.Message() + " (" + oRequete.Texte() + ")")
+	RENVOYER oResultat
+FIN
+
+// Les noms des produits rendus, dans l'ordre des lignes, lus sous leur alias, séparés par « , ».
+PROCEDURE EbTestNoms(oResultat est un cEbResultatSql) : chaîne
+	sNoms est une chaîne = ""
+	POUR TOUT ligne DE oResultat.Lignes()
+		sNoms += EbSeparateur(sNoms) + ligne["produits__nom"]
+	FIN
+	RENVOYER sNoms
+FIN
+
+// Sans condition : les trois lignes, chaque valeur sous son alias « produits__colonne » ; un NULL reste Null, le booléen est relu 1 ou 0.
+PROCEDURE scenario_select_de_toute_la_table_sur_sqlite()
+	oBurin    est un cEbBurin       = EbTestBurin()
+	oProduits est un cEbTable       = EbTestProduits()
+	oResultat est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).OrderBy(oProduits.ColonneNommee("id").Asc()).ToSQL())
+	dbgVérifieEgalité(oResultat.NbLignes(), 3, "trois lignes")
+	tabPremiere est un tableau associatif = oResultat.Lignes()[1]
+	dbgVérifieEgalité(tabPremiere["produits__id"], 1, "id")
+	dbgVérifieEgalité(tabPremiere["produits__nom"], "café", "nom accentué intact")
+	dbgVérifieEgalité(tabPremiere["produits__prix"], 12.5, "prix")
+	dbgVérifieEgalité(tabPremiere["produits__actif"], 1, "le booléen est relu 1 : l'hydratation le convertira selon la nature de la colonne")
+	dbgVérifieEgalité(tabPremiere["produits__cree_le"], "2026-11-01T08:00:00Z", "la date est relue en texte")
+	tabTroisieme est un tableau associatif = oResultat.Lignes()[3]
+	dbgVérifieEgalité(TypeVar(tabTroisieme["produits__prix"]), 0, "NULL relu : type 0")
+	dbgVérifieEgalité(tabTroisieme["produits__actif"], 0, "faux relu 0")
+FIN
+
+// Where, avec une valeur en paramètre : seul le produit de plus de 10 est rendu.
+PROCEDURE scenario_where_et_ordre_sur_sqlite()
+	oBurin    est un cEbBurin       = EbTestBurin()
+	oProduits est un cEbTable       = EbTestProduits()
+	oPrix     est un cEbColonne     = oProduits.ColonneNommee("prix")
+	oChere    est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oPrix.Gt(10)).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oChere), "café", "prix > 10")
+	oCroissant est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oPrix.IsNotNull()).OrderBy(oPrix.Asc()).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oCroissant), "thé, café", "ORDER BY prix ASC, les NULL exclus")
+	oDecroissant est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oPrix.IsNotNull()).OrderBy(oPrix.Desc()).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oDecroissant), "café, thé", "ORDER BY prix DESC")
+	oNul est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oPrix.IsNull()).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oNul), "chocolat", "IS NULL")
+FIN
+
+// Limit et Offset : une page de la liste triée ; un décalage seul fonctionne aussi sur SQLite (LIMIT -1 OFFSET n).
+PROCEDURE scenario_limit_et_offset_sur_sqlite()
+	oBurin    est un cEbBurin       = EbTestBurin()
+	oProduits est un cEbTable       = EbTestProduits()
+	oId       est un cEbColonne     = oProduits.ColonneNommee("id")
+	oPage     est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).OrderBy(oId.Asc()).Limit(1).Offset(1).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oPage), "thé", "la deuxième ligne")
+	oSaut est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).OrderBy(oId.Asc()).Offset(2).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oSaut), "chocolat", "décalage seul : LIMIT -1 OFFSET 2")
+	oZero est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Limit(0).ToSQL())
+	dbgVérifieEgalité(oZero.NbLignes(), 0, "limite zéro : aucune ligne")
+FIN
+
+// Les conditions composées : AND, OR, IN, LIKE, BETWEEN, booléen, date-heure et SQL brut, toutes acceptées par la base avec leurs paramètres typés.
+PROCEDURE scenario_conditions_composees_sur_sqlite()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oId       est un cEbColonne = oProduits.ColonneNommee("id")
+	oNom      est un cEbColonne = oProduits.ColonneNommee("nom")
+	oPrix     est un cEbColonne = oProduits.ColonneNommee("prix")
+	oActif    est un cEbColonne = oProduits.ColonneNommee("actif")
+	oCreeLe   est un cEbColonne = oProduits.ColonneNommee("cree_le")
+	tabIds    est un tableau
+	TableauAjoute(tabIds, 1)
+	TableauAjoute(tabIds, 3)
+	oDans est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oId.IsIn(tabIds)).OrderBy(oId.Asc()).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oDans), "café, chocolat", "IN (1, 3)")
+	oHors est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oId.NotIn(tabIds)).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oHors), "thé", "NOT IN (1, 3)")
+	oLike est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oNom.Like("c%")).OrderBy(oId.Asc()).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oLike), "café, chocolat", "LIKE 'c%'")
+	oEntre est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oPrix.Between(5, 10)).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oEntre), "thé", "BETWEEN 5 AND 10")
+	oVrai est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oActif.Eq(Vrai)).OrderBy(oId.Asc()).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oVrai), "café, thé", "booléen Vrai : trouve les lignes relues 1")
+	oFaux est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oActif.Eq(Faux)).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oFaux), "chocolat", "booléen Faux : trouve les lignes relues 0")
+	oRecent est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oCreeLe.Gte("2026-11-05T00:00:00Z")).OrderBy(oId.Asc()).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oRecent), "thé, chocolat", "date-heure en texte ISO")
+	tabFiltres est un tableau
+	TableauAjoute(tabFiltres, oActif.Eq(Vrai))
+	TableauAjoute(tabFiltres, oPrix.Gt(10))
+	oEt est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oBurin.AllOf(tabFiltres)).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oEt), "café", "actif ET prix > 10")
+	oOu est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oBurin.AnyOf(tabFiltres)).OrderBy(oId.Asc()).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oOu), "café, thé", "actif OU prix > 10")
+	tabParametres est un tableau associatif
+	tabParametres["min"] = 5
+	tabParametres["max"] = 10
+	oBrut est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oBurin.Raw(`"produits"."prix" BETWEEN {min} AND {max}`, tabParametres)).ToSQL())
+	dbgVérifieEgalité(EbTestNoms(oBrut), "thé", "SQL brut avec paramètres nommés")
+FIN
+
+// Une tentative d'injection est une valeur : aucune ligne ne correspond, et la table existe toujours (le texte envoyé ne contenait pas l'instruction).
+PROCEDURE scenario_injection_sans_effet_sur_sqlite()
+	oBurin    est un cEbBurin       = EbTestBurin()
+	oProduits est un cEbTable       = EbTestProduits()
+	oNom      est un cEbColonne     = oProduits.ColonneNommee("nom")
+	oPiege    est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oNom.Eq(`x'; DROP TABLE produits; --`)).ToSQL())
+	dbgVérifieEgalité(oPiege.NbLignes(), 0, "aucune ligne ne porte ce nom")
+	oEncore est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).ToSQL())
+	dbgVérifieEgalité(oEncore.NbLignes(), 3, "la table existe toujours, ses trois lignes aussi")
+	oOuVrai est un cEbResultatSql = EbTestEnvoie(oBurin.Select().From(oProduits).Where(oNom.Eq(`' OR '1'='1`)).ToSQL())
+	dbgVérifieEgalité(oOuVrai.NbLignes(), 0, "« ' OR '1'='1 » n'est pas une condition vraie : c'est un nom de produit introuvable")
+FIN

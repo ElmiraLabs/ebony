@@ -1,0 +1,145 @@
+// Les critères d'une liste, lus dans l'adresse (« ?page=2&limite=10&tri=nom&ordre=desc&filtre_nom=Ada ») : la page, la limite, le tri et les filtres d'égalité.
+// Tous les paramètres arrivent en TEXTE (OWL rend Null un paramètre de query absent quand un suivant est présent, et avale un type raté : « abc » deviendrait 0) : cette classe les lit, les décode (URLDecode), les contrôle et les convertit.
+// Usage (écrit par « ebony make resource » dans le contrôleur) : oCriteres est un cEbCriteresListe(page, limite, tri, ordre), puis un AjouteChamp par colonne, puis Verifie() : UNE réponse 400 qui nomme toutes les erreurs.
+// Défauts : page 1, limite 20 (de 1 à 100), ordre croissant, tri sur la clé. Un filtre vide ou absent n'en est pas un : on ne peut pas filtrer sur « vide ». Un filtre est une ÉGALITÉ exacte (pas de partie de texte, pas d'intervalle).
+cEbCriteresListe est une Classe
+PRIVÉ
+	nPage       est un entier             = 1
+	nLimite     est un entier             = 20
+	sTriDemande est une chaîne            = ""
+	sTri        est une chaîne            = ""
+	bDescendant est un booléen            = Faux
+	sOrdre      est une chaîne            = ""
+	tabFiltres  est un tableau associatif
+	tabSlugs    est un tableau de chaînes
+	sErreurs    est une chaîne            = ""
+
+	PROCEDURE Constructeur(sPage est une chaîne, sLimite est une chaîne, sTri est une chaîne, sOrdre est une chaîne)
+		sPageTexte   est une chaîne = EbListeTexte(sPage)
+		sLimiteTexte est une chaîne = EbListeTexte(sLimite)
+		:sTriDemande = EbListeTexte(sTri)
+		:sOrdre = Minuscule(EbListeTexte(sOrdre))
+		SI sPageTexte <> "" ALORS
+			SI EbListeEntierValide(sPageTexte) ALORS
+				:nPage = Val(sPageTexte)
+			FIN
+			SI PAS EbListeEntierValide(sPageTexte) OU :nPage < 1 ALORS
+				:nPage = 1
+				:sErreurs += "Le paramètre « page » doit être un entier supérieur ou égal à 1. "
+			FIN
+		FIN
+		SI sLimiteTexte <> "" ALORS
+			SI EbListeEntierValide(sLimiteTexte) ALORS
+				:nLimite = Val(sLimiteTexte)
+			FIN
+			SI PAS EbListeEntierValide(sLimiteTexte) OU :nLimite < 1 OU :nLimite > EbListeLimiteMax() ALORS
+				:nLimite = EbListeLimiteDefaut()
+				:sErreurs += "Le paramètre « limite » doit être un entier de 1 à " + EbListeLimiteMax() + ". "
+			FIN
+		FIN
+		SI :sOrdre = "desc" ALORS
+			:bDescendant = Vrai
+		FIN
+		SI :sOrdre <> "" ET :sOrdre <> "asc" ET :sOrdre <> "desc" ALORS
+			:sErreurs += "Le paramètre « ordre » doit valoir asc ou desc. "
+		FIN
+	FIN
+
+	// Mémorise le filtre d'une colonne (une copie locale : OWL n'écrit pas par « :champ[clé] = valeur »).
+	PROCEDURE PRIVÉE Retient(sColonne est une chaîne, valeur est un JSON)
+		tabCopie est un tableau associatif = :tabFiltres
+		tabCopie[sColonne] = valeur
+		:tabFiltres = tabCopie
+	FIN
+	// Déclare une colonne de la liste : on peut la trier (« tri=<sSlug> », le nom de la clé JSON de la colonne) et la filtrer (« filtre_<sSlug>=… »). sType : texte, entier, reel, booleen, date, dateheure.
+	// sBrut : la valeur reçue pour le filtre de cette colonne (vide, ou Null : pas de filtre). Une valeur qui n'est pas du type de la colonne est une erreur, relevée pour Verifie().
+	PROCEDURE PUBLIQUE AjouteChamp(sSlug est une chaîne, sColonne est une chaîne, sType est une chaîne, sBrut est une chaîne)
+		TableauAjoute(:tabSlugs, sSlug)
+		SI :sTriDemande = sSlug ALORS
+			:sTri = sColonne
+		FIN
+		sValeur est une chaîne = EbListeTexte(sBrut)
+		SI sValeur = "" ALORS
+			RETOUR
+		FIN
+		// Déclarés avant le SELON : une déclaration dans un CAS corrompt des variables locales (OWL 1.6.0).
+		bValide    est un booléen = Vrai
+		nValeur    est un entier  = 0
+		rValeur    est un réel    = 0
+		bValeur    est un booléen = Faux
+		sMinuscule est une chaîne = Minuscule(sValeur)
+		SELON sType
+			CAS "entier"
+			bValide = EbListeEntierValide(sValeur)
+			SI bValide ALORS
+				nValeur = Val(sValeur)
+				:Retient(sColonne, nValeur)
+			FIN
+			CAS "reel"
+			bValide = EbListeReelValide(sValeur)
+			SI bValide ALORS
+				rValeur = Val(sValeur)
+				:Retient(sColonne, rValeur)
+			FIN
+			CAS "booleen"
+			bValide = (sMinuscule = "true" OU sMinuscule = "false" OU sMinuscule = "1" OU sMinuscule = "0")
+			SI bValide ALORS
+				bValeur = (sMinuscule = "true" OU sMinuscule = "1")
+				:Retient(sColonne, bValeur)
+			FIN
+			CAS "date"
+			bValide = EbDateIsoValide(sValeur)
+			SI bValide ALORS
+				:Retient(sColonne, sValeur)
+			FIN
+			CAS "dateheure"
+			bValide = EbDateHeureIsoValide(sValeur)
+			SI bValide ALORS
+				:Retient(sColonne, sValeur)
+			FIN
+			AUTRE CAS
+			:Retient(sColonne, sValeur)
+		FIN
+		SI PAS bValide ALORS
+			:sErreurs += "Le paramètre « filtre_" + sSlug + " » doit être " + EbListeDescriptionType(sType) + ". "
+		FIN
+	FIN
+
+	// Lève 400, UNE seule fois, avec toutes les erreurs : un paramètre mal formé, un tri qui n'est pas une colonne.
+	PROCEDURE PUBLIQUE Verifie()
+		sMessage est une chaîne = :sErreurs
+		SI :sTriDemande <> "" ET :sTri = "" ALORS
+			sMessage += "Le paramètre « tri » doit être l'un de : " + EbListeSlugs(:tabSlugs) + ". "
+		FIN
+		SI sMessage <> "" ALORS
+			ExceptionDéclenche(400, SansEspace(sMessage))
+		FIN
+	FIN
+
+	PROCEDURE PUBLIQUE Page() : entier
+		RENVOYER :nPage
+	FIN
+
+	PROCEDURE PUBLIQUE Limite() : entier
+		RENVOYER :nLimite
+	FIN
+
+	// Le nombre de lignes à sauter avant la page demandée.
+	PROCEDURE PUBLIQUE Decalage() : entier
+		RENVOYER (:nPage - 1) * :nLimite
+	FIN
+
+	// La colonne du tri demandé (son nom dans la base), ou « » : la liste est alors triée par la clé.
+	PROCEDURE PUBLIQUE Tri() : chaîne
+		RENVOYER :sTri
+	FIN
+
+	PROCEDURE PUBLIQUE Descendant() : booléen
+		RENVOYER :bDescendant
+	FIN
+
+	// Les filtres : colonne (son nom dans la base) vers valeur, du type de la colonne (entier, réel, booléen, texte).
+	PROCEDURE PUBLIQUE Filtres() : tableau associatif
+		RENVOYER :tabFiltres
+	FIN
+FIN

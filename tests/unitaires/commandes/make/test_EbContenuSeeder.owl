@@ -1,0 +1,94 @@
+// Tests de EbContenuSeeder : les chemins, le registre lu dans app/Composants.owl, le texte de la classe, du test et du lanceur, et les notes.
+// Que ce texte COMPILE et que ses tests PASSENT est prouvé par tests/integration/lanceur.ps1 (groupe « make »), contre le vrai owl.
+
+PROCEDURE EbTestDemandeSeeder(sNom est une chaîne) : cEbDemandeMake
+	tabArgs est un tableau de chaînes
+	TableauAjoute(tabArgs, "seeder")
+	TableauAjoute(tabArgs, sNom)
+	oDemande est un cEbDemandeMake = EbAnalyseArgumentsMake(tabArgs)
+	RENVOYER oDemande
+FIN
+
+// Trois fichiers : la classe, son test, le lanceur du projet.
+PROCEDURE scenario_seeder_fichiers()
+	oDemande est un cEbDemandeMake = EbTestDemandeSeeder("Bon de commande")
+	dbgVérifieEgalité(EbListeVirgules(EbFichiersSeeder(oDemande)), "database/seeders/bon-de-commande/cSeederBonDeCommande.owl, tests/unitaires/bon-de-commande/test_cSeederBonDeCommande.owl, database/seeders/DatabaseSeeder.owl", "classe, test, lanceur")
+FIN
+
+// Le registre est le nom de la procédure « …ComposantsDeclares() » d'app/Composants.owl (« …Fabriques() » pour un projet de la 0.1.5 ou avant) ; un texte sans elle donne « ».
+PROCEDURE scenario_seeder_registre_du_projet()
+	sActuel est une chaîne = "AppBoutiqueComposants est une CollectionDeProcédures" + Caract(10) + Caract(9) + "PROCEDURE AppBoutiqueComposantsDeclares() : tableau" + Caract(10) + Caract(9) + "FIN"
+	dbgVérifieEgalité(EbNomRegistreDuProjet(sActuel), "AppBoutiqueComposantsDeclares", "le registre de la forme actuelle")
+	sComposants est une chaîne = "AppBoutiqueComposants est une CollectionDeProcédures" + Caract(10) + Caract(9) + "PROCEDURE AppBoutiqueFabriques() : tableau" + Caract(10) + Caract(9) + "FIN"
+	dbgVérifieEgalité(EbNomRegistreDuProjet(sComposants), "AppBoutiqueFabriques", "le registre d'un projet de la 0.1.5 ou avant")
+	dbgVérifieEgalité(EbNomRegistreDuProjet("rien d'utile"), "", "pas de registre")
+	dbgVérifieEgalité(EbNomRegistreDuProjet("PROCEDURE AppFabriques() : tableau"), "AppFabriques", "un nom court")
+FIN
+
+// La classe : un constructeur (repository, fabrique), Remplit(n) qui ne fait rien si la table n'est pas vide, passe par la fabrique.
+PROCEDURE scenario_seeder_classe()
+	sClasse est une chaîne = EbContenuClasseSeeder(EbTestDemandeSeeder("Client"))
+	dbgVérifieVrai(Position(sClasse, "cSeederClient est une Classe") > 0, "classe cSeederClient")
+	dbgVérifieVrai(Position(sClasse, "PROCEDURE Constructeur(repository est un iRepoClient, fabrique est une cFabriqueClient)") > 0, "constructeur")
+	dbgVérifieVrai(Position(sClasse, "PROCEDURE PUBLIQUE Remplit(nNombre est un entier) : entier") > 0, "Remplit")
+	dbgVérifieVrai(Position(sClasse, ":oRepository.Enumere()..Occurrence > 0") > 0, "ne fait rien si la table n'est pas vide")
+	dbgVérifieVrai(Position(sClasse, ":oFabrique.Persiste(:oRepository)") > 0, "passe par la fabrique")
+	dbgVérifieEgalité(Position(sClasse, Caract(13)), 0, "aucun retour chariot")
+FIN
+
+// Le test : trois scénarios sur le repository en mémoire.
+PROCEDURE scenario_seeder_test()
+	sTest est une chaîne = EbContenuTestSeeder(EbTestDemandeSeeder("Client"))
+	dbgVérifieVrai(Position(sTest, "PROCEDURE scenario_seeder_remplit_une_table_vide()") > 0, "table vide")
+	dbgVérifieVrai(Position(sTest, "PROCEDURE scenario_seeder_relance_ne_double_rien()") > 0, "relance")
+	dbgVérifieVrai(Position(sTest, "PROCEDURE scenario_seeder_respecte_les_lignes_existantes()") > 0, "lignes existantes")
+	dbgVérifieVrai(Position(sTest, "cRepoClientMemoire") > 0, "le repository en mémoire")
+FIN
+
+// Le lanceur : gardé par --seed, démarre l'application par le registre du projet, appelle le garde APP_ENV avant les seeders, arrête l'application.
+PROCEDURE scenario_seeder_lanceur()
+	sLanceur est une chaîne = EbContenuLanceurSeeder(EbTestDemandeSeeder("Client"), "AppBoutiqueFabriques", EbGenerateurParDefaut())
+	dbgVérifieVrai(Position(sLanceur, "SI LigneCommande(1) = " + Caract(34) + "--seed" + Caract(34) + " ALORS") > 0, "gardé par --seed")
+	dbgVérifieVrai(Position(sLanceur, "POUR TOUT oSeedComposant DE AppBoutiqueFabriques()") > 0, "le registre du projet")
+	nGarde  est un entier = Position(sLanceur, "EbSeedExigeDeveloppement(")
+	nSeeder est un entier = Position(sLanceur, "cSeederClient(")
+	nArret  est un entier = Position(sLanceur, "cEbServiceApplication.Arrête()")
+	dbgVérifieVrai(nGarde > 0, "le garde est appelé")
+	dbgVérifieVrai(nGarde < nSeeder, "le garde passe avant le seeder")
+	dbgVérifieVrai(nSeeder < nArret, "l'application est arrêtée à la fin")
+	dbgVérifieVrai(Position(sLanceur, "oSeedClient.Remplit(10)") > 0, "dix lignes par défaut")
+FIN
+
+// Les notes : où est le seeder et comment le lancer ; avec un lanceur déjà là, les lignes à y ajouter ; les manques du projet.
+PROCEDURE scenario_seeder_notes()
+	oDemande est un cEbDemandeMake     = EbTestDemandeSeeder("Client")
+	tabCrees est un tableau de chaînes
+	tabAucun est un tableau de chaînes
+	TableauAjoute(tabCrees, "database/seeders/DatabaseSeeder.owl")
+	sNeuf est une chaîne = EbListeVirgules(EbNotesSeeder(oDemande, tabCrees, tabAucun, "", Faux, Faux, EbGenerateurParDefaut()))
+	dbgVérifieVrai(Position(sNeuf, "owl database/seeders/DatabaseSeeder.owl --seed") > 0, "dit comment le lancer")
+	dbgVérifieVrai(Position(sNeuf, "APP_ENV=developpement") > 0, "dit que la production est refusée")
+	dbgVérifieEgalité(Position(sNeuf, "existe déjà"), 0, "rien de conservé")
+	tabConserves est un tableau de chaînes
+	TableauAjoute(tabConserves, "database/seeders/DatabaseSeeder.owl")
+	sAncien est une chaîne = EbListeVirgules(EbNotesSeeder(oDemande, tabAucun, tabConserves, "{ }", Vrai, Vrai, EbGenerateurParDefaut()))
+	dbgVérifieVrai(Position(sAncien, "existe déjà : il n'est pas modifié") > 0, "le lanceur conservé")
+	dbgVérifieVrai(Position(sAncien, "oSeedRepoClient est un cRepoClientSql") > 0, "les lignes à ajouter")
+	dbgVérifieVrai(Position(sAncien, "n'a pas la variable APP_ENV") > 0, "un config/env.json sans APP_ENV")
+	dbgVérifieVrai(Position(sAncien, "ebony/fabriques/EbSeed.owl est absent") > 0, "une copie d'ebony/ ancienne")
+FIN
+
+// Le générateur écrit dans le lanceur est celui qu'on donne : le compteur par défaut, celui d'un module du projet sinon ; la note le dit seulement dans ce second cas.
+PROCEDURE scenario_seeder_generateur_du_module()
+	oDemande   est un cEbDemandeMake = EbTestDemandeSeeder("Client")
+	sParDefaut est une chaîne        = EbContenuLanceurSeeder(oDemande, "AppBoutiqueFabriques", EbGenerateurParDefaut())
+	sDuModule  est une chaîne        = EbContenuLanceurSeeder(oDemande, "AppBoutiqueFabriques", "cEbGenerateurFigurant(42)")
+	dbgVérifieVrai(Position(sParDefaut, "cFabriqueClient(cEbGenerateurCompteur())") > 0, "par défaut : le compteur")
+	dbgVérifieVrai(Position(sDuModule, "cFabriqueClient(cEbGenerateurFigurant(42))") > 0, "avec un module : son générateur dans la fabrique")
+	dbgVérifieEgalité(Position(sDuModule, "cEbGenerateurCompteur"), 0, "et plus le compteur")
+	tabCrees est un tableau de chaînes
+	tabAucun est un tableau de chaînes
+	TableauAjoute(tabCrees, "database/seeders/DatabaseSeeder.owl")
+	dbgVérifieEgalité(Position(EbListeVirgules(EbNotesSeeder(oDemande, tabCrees, tabAucun, "", Faux, Faux, EbGenerateurParDefaut())), "générateur de valeurs du seeder"), 0, "le compteur : pas de note")
+	dbgVérifieVrai(Position(EbListeVirgules(EbNotesSeeder(oDemande, tabCrees, tabAucun, "", Faux, Faux, "cEbGenerateurFigurant(42)")), "cEbGenerateurFigurant(42) : un module du projet") > 0, "un module : une note qui le dit et dit comment revenir au compteur")
+FIN

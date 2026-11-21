@@ -1,0 +1,153 @@
+// Tests de cEbSql : du SQL en morceaux. Texte, noms, valeurs (devenues des paramètres, jamais écrites dans le texte), morceaux imbriqués, SQL brut avec paramètres nommés, jonction ET/OU qui ignore les vides.
+// Aucune base : Construit(dialecte) rend le texte et les paramètres.
+
+// Lance l'ajout de SQL brut et rend « code|message » si il lève, ou « » s'il réussit.
+PROCEDURE EbTestRefusBrut(sTexte est une chaîne, parametres est un tableau associatif) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oEssaiBrut est un cEbSql
+		oEssaiBrut.AjouteBrut(sTexte, parametres)
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Les quatre sortes de morceau : le texte tel quel, la table et la colonne échappées par le dialecte, la valeur remplacée par un paramètre.
+PROCEDURE scenario_morceaux()
+	oSql est un cEbSql
+	oSql.AjouteTexte("SELECT ").AjouteColonne("produits", "nom").AjouteTexte(" FROM ").AjouteTable("produits").AjouteTexte(" WHERE x = ").AjouteValeur(10)
+	oRequete est un cEbRequete = oSql.Construit(EbTestDialecte())
+	dbgVérifieEgalité(oRequete.Texte(), `SELECT "produits"."nom" FROM "produits" WHERE x = {p1}`, "le texte")
+	dbgVérifieEgalité(oRequete.NbParametres(), 1, "une valeur, un paramètre")
+FIN
+
+// Une valeur n'est JAMAIS écrite dans le texte : une tentative d'injection est un paramètre, avec son texte intact.
+PROCEDURE scenario_la_valeur_n_entre_pas_dans_le_texte()
+	oSql est un cEbSql
+	oSql.AjouteTexte("a = ").AjouteValeur(`x'; DROP TABLE produits; --`)
+	oRequete est un cEbRequete = oSql.Construit(EbTestDialecte())
+	dbgVérifieEgalité(oRequete.Texte(), "a = {p1}", "le texte ne contient que le paramètre")
+	dbgVérifieEgalité(Position(oRequete.Texte(), "DROP"), 0, "rien de la valeur dans le texte")
+	tabParametres est un tableau associatif = oRequete.Parametres()
+	dbgVérifieEgalité(tabParametres["p1"], `x'; DROP TABLE produits; --`, "la valeur est dans le paramètre, intacte")
+FIN
+
+// Chaque valeur garde son type d'origine (texte, entier, réel, booléen, date, Null) : la base les reçoit tels quels.
+PROCEDURE scenario_les_valeurs_gardent_leur_type()
+	dJour est une date  = "20261113"
+	oSql  est un cEbSql
+	oSql.AjouteValeur("café").AjouteValeur(42).AjouteValeur(3.5).AjouteValeur(Vrai).AjouteValeur(dJour).AjouteValeur(Null)
+	oRequete est un cEbRequete         = oSql.Construit(EbTestDialecte())
+	tabP     est un tableau associatif = oRequete.Parametres()
+	dbgVérifieEgalité(oRequete.Texte(), "{p1}{p2}{p3}{p4}{p5}{p6}", "six paramètres, numérotés dans l'ordre")
+	dbgVérifieEgalité(TypeVar(tabP["p1"]), owlChaîne, "texte")
+	dbgVérifieEgalité(tabP["p1"], "café", "texte accentué intact")
+	dbgVérifieEgalité(TypeVar(tabP["p2"]), owlEntier, "entier")
+	dbgVérifieEgalité(TypeVar(tabP["p3"]), owlRéel, "réel")
+	dbgVérifieEgalité(TypeVar(tabP["p4"]), owlBooléen, "booléen")
+	dbgVérifieEgalité(TypeVar(tabP["p5"]), owlDate, "date")
+	dbgVérifieEgalité(TypeVar(tabP["p6"]), 0, "Null")
+FIN
+
+// Un morceau imbriqué garde sa place, et ses valeurs gardent leur rang dans la requête finale : la numérotation continue à travers l'imbrication.
+PROCEDURE scenario_imbrication_numerotation_continue()
+	oInterne est un cEbSql
+	oInterne.AjouteTexte("b = ").AjouteValeur(2).AjouteTexte(" AND c = ").AjouteValeur(3)
+	oSql est un cEbSql
+	oSql.AjouteTexte("a = ").AjouteValeur(1).AjouteTexte(" AND (").AjouteSql(oInterne).AjouteTexte(") AND d = ").AjouteValeur(4)
+	oRequete est un cEbRequete         = oSql.Construit(EbTestDialecte())
+	tabP     est un tableau associatif = oRequete.Parametres()
+	dbgVérifieEgalité(oRequete.Texte(), "a = {p1} AND (b = {p2} AND c = {p3}) AND d = {p4}", "numérotation continue")
+	dbgVérifieEgalité(tabP["p1"] + tabP["p2"] * 10 + tabP["p3"] * 100 + tabP["p4"] * 1000, 4321, "chaque valeur est à son rang")
+FIN
+
+// Construire deux fois le même morceau donne deux requêtes indépendantes, de même texte : rien ne s'accumule dans le morceau.
+PROCEDURE scenario_construire_deux_fois()
+	oSql est un cEbSql
+	oSql.AjouteTexte("a = ").AjouteValeur(1)
+	oPremiere est un cEbRequete = oSql.Construit(EbTestDialecte())
+	oSeconde  est un cEbRequete = oSql.Construit(EbTestDialecte())
+	dbgVérifieEgalité(oPremiere.Texte(), oSeconde.Texte(), "même texte")
+	dbgVérifieEgalité(oSeconde.NbParametres(), 1, "toujours un seul paramètre")
+FIN
+
+// Vide : rien n'a été ajouté. Colonnes : les colonnes citées, imbriquées comprises, sous la forme « table.colonne ».
+PROCEDURE scenario_vide_et_colonnes()
+	oVide est un cEbSql
+	dbgVérifieVrai(oVide.Vide(), "un morceau neuf est vide")
+	dbgVérifieEgalité(oVide.Colonnes()..Occurrence, 0, "aucune colonne")
+	oInterne est un cEbSql
+	oInterne.AjouteColonne("categories", "nom")
+	oSql est un cEbSql
+	oSql.AjouteColonne("produits", "prix").AjouteTexte(" = ").AjouteSql(oInterne)
+	dbgVérifieFaux(oSql.Vide(), "plus vide")
+	dbgVérifieEgalité(EbListeVirgules(oSql.Colonnes()), "produits.prix, categories.nom", "les colonnes, imbriquées comprises, dans l'ordre")
+FIN
+
+// Joint : les vides sont ignorés ; une seule expression reste telle quelle ; plusieurs sont entre parenthèses, avec l'opérateur.
+PROCEDURE scenario_joint_ignore_les_vides()
+	oA est un cEbSql
+	oA.AjouteTexte("a = 1")
+	oB est un cEbSql
+	oB.AjouteTexte("b = 2")
+	oVide     est un cEbSql
+	tabAucune est un tableau
+	oRien     est un cEbSql
+	oRien.Joint(" AND ", tabAucune)
+	dbgVérifieVrai(oRien.Vide(), "un tableau vide donne une expression vide")
+	tabQueDesVides est un tableau
+	TableauAjoute(tabQueDesVides, oVide)
+	TableauAjoute(tabQueDesVides, oVide)
+	oRienDuTout est un cEbSql
+	oRienDuTout.Joint(" AND ", tabQueDesVides)
+	dbgVérifieVrai(oRienDuTout.Vide(), "des expressions vides donnent une expression vide")
+	tabUne est un tableau
+	TableauAjoute(tabUne, oVide)
+	TableauAjoute(tabUne, oA)
+	oUne est un cEbSql
+	oUne.Joint(" AND ", tabUne)
+	dbgVérifieEgalité(EbTestTexte(oUne), "a = 1", "une seule expression utile : sans parenthèses")
+	tabDeux est un tableau
+	TableauAjoute(tabDeux, oA)
+	TableauAjoute(tabDeux, oVide)
+	TableauAjoute(tabDeux, oB)
+	oDeux est un cEbSql
+	oDeux.Joint(" OR ", tabDeux)
+	dbgVérifieEgalité(EbTestTexte(oDeux), "(a = 1 OR b = 2)", "deux expressions utiles : entre parenthèses, le vide est passé")
+FIN
+
+// Le SQL brut : chaque {nom} devient une valeur de la requête, le reste du texte est gardé tel quel, les types sont conservés.
+PROCEDURE scenario_brut_avec_parametres_nommes()
+	tabParametres est un tableau associatif
+	tabParametres["min"] = 10
+	tabParametres["motif"] = "a%"
+	oSql est un cEbSql
+	oSql.AjouteBrut("prix > {min} AND nom LIKE {motif} OR prix = {min}", tabParametres)
+	oRequete est un cEbRequete         = oSql.Construit(EbTestDialecte())
+	tabP     est un tableau associatif = oRequete.Parametres()
+	dbgVérifieEgalité(oRequete.Texte(), "prix > {p1} AND nom LIKE {p2} OR prix = {p3}", "les noms deviennent p1, p2, p3 (un nom utilisé deux fois donne deux valeurs)")
+	dbgVérifieEgalité(tabP["p1"], 10, "min")
+	dbgVérifieEgalité(TypeVar(tabP["p1"]), owlEntier, "le type est conservé")
+	dbgVérifieEgalité(tabP["p2"], "a%", "motif")
+	dbgVérifieEgalité(tabP["p3"], 10, "min de nouveau")
+	oSansParametre est un cEbSql
+	oSansParametre.AjouteBrut("1 = 1", tabParametres)
+	dbgVérifieEgalité(EbTestTexte(oSansParametre), "1 = 1", "sans accolade : tel quel, les paramètres inutiles sont ignorés")
+	oDebut est un cEbSql
+	oDebut.AjouteBrut("{min} < prix", tabParametres)
+	dbgVérifieEgalité(EbTestTexte(oDebut), "{p1} < prix", "un paramètre au tout début")
+FIN
+
+// Le SQL brut mal écrit est refusé (7007) en citant le texte : paramètre inconnu, accolade ouverte ou fermée seule, nom vide.
+PROCEDURE scenario_brut_invalide_refuse()
+	tabParametres est un tableau associatif
+	tabParametres["min"] = 10
+	sRes est une chaîne = EbTestRefusBrut("prix > {max}", tabParametres)
+	dbgVérifieEgalité(Gauche(sRes, 5), "7007|", "paramètre inconnu")
+	dbgVérifieVrai(Position(sRes, "{max}") > 0, "le paramètre fautif est cité : " + sRes)
+	dbgVérifieEgalité(Gauche(EbTestRefusBrut("prix > {min", tabParametres), 5), "7007|", "accolade ouverte sans fermeture")
+	dbgVérifieEgalité(Gauche(EbTestRefusBrut("prix > min}", tabParametres), 5), "7007|", "accolade fermée sans ouvrante")
+	dbgVérifieEgalité(Gauche(EbTestRefusBrut("prix > {}", tabParametres), 5), "7007|", "paramètre sans nom")
+	dbgVérifieEgalité(EbTestRefusBrut("prix > {min}", tabParametres), "", "le cas valide ne lève rien")
+FIN

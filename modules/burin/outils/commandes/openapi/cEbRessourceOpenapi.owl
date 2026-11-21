@@ -1,0 +1,61 @@
+// Une ressource lue dans app/domaine/<dossier>/ressource.json pour « ebony openapi » : son nom (sûr pour un identifiant OpenAPI), son segment d'adresse, sa clé et ses champs. Objet valeur immuable, rempli par le constructeur.
+// La description est CONTRÔLÉE par EbChampsDeDescription (mêmes règles que « make » : une description incorrecte lève 25 et nomme le fichier et le champ). Les membres que cEbChampTable ne porte pas (« defaut », « regles ») se lisent dans le JSON,
+// par la position du champ : Description() rend ce JSON, Champs() les champs dans le même ordre.
+cEbRessourceOpenapi est une Classe
+PRIVÉ
+	sNom         est une chaîne                  = ""
+	sSegment     est une chaîne                  = ""
+	sTypeCle     est une chaîne                  = "entier"
+	sColonneCle  est une chaîne                  = ""
+	tabChamps    est un tableau de cEbChampTable
+	jDescription est un JSON
+
+	// texte : le contenu du fichier ; chemin : son chemin relatif (pour les messages) ; dossier : le dossier de la ressource sous app/domaine (repli pour le nom).
+	PROCEDURE Constructeur(Texte est une chaîne, Chemin est une chaîne, Dossier est une chaîne)
+		SI PAS JSONValide(Texte) ALORS
+			ExceptionDéclenche(25, Chemin + " n'est pas du JSON valide.")
+		FIN
+		:jDescription = ChaîneVersJSON(Texte)
+		sNomLu est une chaîne = EbTexteDeDescription(:jDescription, "ressource", Chemin)
+		sTable est une chaîne = EbTexteDeDescription(:jDescription, "table", Chemin)
+		:tabChamps = EbChampsDeDescription(Texte, Chemin)
+		:sNom = EbNomOpenapi(sNomLu, Dossier)
+		tabParties est un tableau de chaînes = ChaîneDécoupe(sTable, ".")
+		:sSegment = Minuscule(tabParties[tabParties..Occurrence])
+		POUR TOUT oChamp DE :tabChamps
+			SI oChamp.Cle() ALORS
+				:sColonneCle = oChamp.NomColonne()
+				:sTypeCle = oChamp.TypeChamp()
+			FIN
+		FIN
+	FIN
+
+	// Le nom de la ressource, sans signe qui gênerait un identifiant OpenAPI (« Produit »).
+	PROCEDURE PUBLIQUE Nom() : chaîne
+		RENVOYER :sNom
+	FIN
+
+	// Le segment d'adresse : « produits » pour GET /api/produits.
+	PROCEDURE PUBLIQUE Segment() : chaîne
+		RENVOYER :sSegment
+	FIN
+
+	// Le type d'ebony de la clé (entier ou texte) ; entier si la description n'a pas de clé.
+	PROCEDURE PUBLIQUE TypeCle() : chaîne
+		RENVOYER :sTypeCle
+	FIN
+
+	// La colonne de la clé, ou « » s'il n'y en a pas.
+	PROCEDURE PUBLIQUE ColonneCle() : chaîne
+		RENVOYER :sColonneCle
+	FIN
+
+	PROCEDURE PUBLIQUE Champs() : tableau de cEbChampTable
+		RENVOYER :tabChamps
+	FIN
+
+	// Le JSON de la description, pour lire « defaut » et « regles » du champ de même position.
+	PROCEDURE PUBLIQUE Description() : JSON
+		RENVOYER :jDescription
+	FIN
+FIN

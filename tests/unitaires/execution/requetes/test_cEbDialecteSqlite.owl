@@ -1,0 +1,36 @@
+// Tests du dialecte SQLite du constructeur de requêtes : l'écriture d'un nom, d'un paramètre, de la limite et du décalage.
+
+// Un nom est entre guillemets doubles ; un guillemet dans le nom est doublé (il ne peut pas sortir du nom) ; les accents passent.
+PROCEDURE scenario_nom_echappe()
+	oDialecte est un cEbDialecteSqlite
+	dbgVérifieEgalité(oDialecte.Nom("produits"), `"produits"`, "un nom simple")
+	dbgVérifieEgalité(oDialecte.Nom("prix unitaire"), `"prix unitaire"`, "un espace est permis entre guillemets")
+	dbgVérifieEgalité(oDialecte.Nom(`a"b`), `"a""b"`, "le guillemet est doublé")
+	dbgVérifieEgalité(oDialecte.Nom(`x"; DROP TABLE t; --`), `"x""; DROP TABLE t; --"`, "une tentative d'injection reste dans le nom")
+	dbgVérifieEgalité(oDialecte.Nom("café"), `"café"`, "les accents passent")
+FIN
+
+// Le paramètre est la forme « {nom} » d'OWL, que iEbConnexionSql.Envoie remplace.
+PROCEDURE scenario_parametre()
+	oDialecte est un cEbDialecteSqlite
+	dbgVérifieEgalité(oDialecte.Parametre("p1"), "{p1}", "p1")
+	dbgVérifieEgalité(oDialecte.Parametre("p12"), "{p12}", "p12")
+FIN
+
+// LIMIT et OFFSET : rien si rien n'est demandé ; SQLite exige LIMIT avant OFFSET, un décalage seul s'écrit LIMIT -1 OFFSET n.
+PROCEDURE scenario_limite_et_decalage()
+	oDialecte est un cEbDialecteSqlite
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(-1,-1), "", "rien")
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(5,-1), " LIMIT 5", "limite seule")
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(5, 10), " LIMIT 5 OFFSET 10", "limite et décalage")
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(-1, 10), " LIMIT -1 OFFSET 10", "décalage seul : LIMIT -1 d'abord")
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(0,-1), " LIMIT 0", "limite zéro : aucune ligne, pas « rien »")
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(-1, 0), "", "décalage zéro : rien")
+	dbgVérifieEgalité(oDialecte.LimiteDecalage(3, 0), " LIMIT 3", "décalage zéro avec limite")
+FIN
+
+// Le retour des colonnes écrites : « RETURNING » suivi des colonnes que l'appelant a déjà écrites avec le dialecte.
+PROCEDURE scenario_returning()
+	oDialecte est un cEbDialecteSqlite
+	dbgVérifieEgalité(oDialecte.Returning("""id"" AS ""p__id"""), " RETURNING ""id"" AS ""p__id""", "le mot clé et les colonnes")
+FIN

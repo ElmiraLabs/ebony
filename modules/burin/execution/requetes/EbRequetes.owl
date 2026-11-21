@@ -1,0 +1,289 @@
+// Le contrat du constructeur de requêtes de Burin (le dialecte : une interface doit être déclarée dans une Collection pour être reconnue) et ses fonctions pures : les natures de colonne, ce qu'une valeur peut être pour une nature,
+// l'assemblage des conditions et la vérification des lignes à écrire. Le constructeur ne nomme AUCUN dialecte : il ne connaît que ce contrat. Adaptateurs : cEbDialecteSqlite (SQLite ; PostgreSQL ensuite).
+// Les erreurs de construction sont des exceptions à code propre (jamais un SQL faux envoyé à la base) :
+//   7001 une colonne n'appartient à aucune table de la requête   7002 une valeur ne convient pas à la colonne   7003 liste vide pour IN
+//   7004 limite ou décalage invalide                             7005 définition de table ou de colonne invalide
+//   7006 requête incomplète (pas de table, pas de ligne, rien à modifier)   7007 SQL brut invalide (paramètre inconnu, accolade mal fermée)
+//   7008 écriture refusée : un Update ou un Del sans condition (ou ForAllRows() avec une condition)
+//   7009 jointure invalide : sans condition, ou une table présente deux fois dans la requête
+//   7010 lecture d'une ligne refusée : colonne non sélectionnée, accesseur qui ne convient pas à la nature, type de valeur inattendu
+//   7011 pas de dialecte SQL pour ce fournisseur (hfsql) : Burin() n'est pas disponible pour ce projet
+EbRequetes est une CollectionDeProcédures
+
+	// Ce qui change d'une base SQL à l'autre dans le texte d'une requête : l'écriture d'un nom, celle d'un paramètre, la limite et le décalage, le retour des colonnes écrites.
+	iEbDialecteSql est une Interface
+		// Un nom de table ou de colonne, échappé pour cette base : jamais écrit tel quel dans le texte d'une requête.
+		PROCEDURE PUBLIQUE Nom(sNom est une chaîne) : chaîne
+		// Le paramètre qui désigne une valeur dans le texte (« {p1} » : la forme que iEbConnexionSql.Envoie attend). sNom est « p1 », « p2 »…
+		PROCEDURE PUBLIQUE Parametre(sNom est une chaîne) : chaîne
+		// La fin d'une requête qui limite et décale les lignes, avec son espace initial, ou « » si rien n'est demandé. Une valeur négative veut dire « pas de limite » ou « pas de décalage ».
+		PROCEDURE PUBLIQUE LimiteDecalage(nLimite est un entier, nDecalage est un entier) : chaîne
+		// La fin d'une écriture qui rend des colonnes (INSERT, UPDATE ou DELETE … RETURNING), avec son espace initial. sColonnes : les colonnes déjà écrites par le dialecte, séparées par des virgules.
+		PROCEDURE PUBLIQUE Returning(sColonnes est une chaîne) : chaîne
+	FIN
+
+	// Les natures de colonne, séparées par « | » (les mêmes que celles de « ebony make »).
+	PROCEDURE EbNaturesColonne() : chaîne
+		RENVOYER "entier|texte|reel|booleen|date|dateheure"
+	FIN
+
+	// Vrai si c'est une nature connue.
+	PROCEDURE EbNatureValide(sNature est une chaîne) : booléen
+		RENVOYER Position("|" + EbNaturesColonne() + "|", "|" + sNature + "|") > 0 ET Position(sNature, "|") = 0
+	FIN
+
+	// Vrai si ce nom peut être celui d'une table ou d'une colonne : non vide, sans caractère de contrôle. Le dialecte l'échappe ; un nom n'est jamais écrit tel quel dans le texte.
+	PROCEDURE EbNomSqlValide(sNom est une chaîne) : booléen
+		SI Taille(sNom) = 0 ALORS
+			RENVOYER Faux
+		FIN
+		POUR i = 1 À Taille(sNom)
+			SI Asc(Milieu(sNom, i, 1)) < 32 ALORS
+				RENVOYER Faux
+			FIN
+		FIN
+		RENVOYER Vrai
+	FIN
+
+	// Le nom français du type d'une valeur, pour les messages.
+	PROCEDURE EbNomTypeValeur(valeur est un JSON) : chaîne
+		nType est un entier = TypeVar(valeur)
+		SI nType = 0 ALORS
+			RENVOYER "Null"
+		FIN
+		SI nType = owlChaîne ALORS
+			RENVOYER "chaîne"
+		FIN
+		SI nType = owlEntier ALORS
+			RENVOYER "entier"
+		FIN
+		SI nType = owlRéel ALORS
+			RENVOYER "réel"
+		FIN
+		SI nType = owlBooléen ALORS
+			RENVOYER "booléen"
+		FIN
+		SI nType = owlDate OU nType = owlDateHeure ALORS
+			RENVOYER "date"
+		FIN
+		RENVOYER "type " + nType
+	FIN
+
+	// Vrai si la valeur convient à une colonne de cette nature. Null ne convient jamais (« = NULL » est toujours faux en SQL : IsNull() existe pour cela).
+	// Un entier convient à un réel ; une date ou une date-heure s'écrit en texte ISO ou en date OWL.
+	PROCEDURE EbValeurConvient(sNature est une chaîne, valeur est un JSON) : booléen
+		nType est un entier = TypeVar(valeur)
+		SELON sNature
+			CAS "entier"
+			RENVOYER nType = owlEntier
+			CAS "texte"
+			RENVOYER nType = owlChaîne
+			CAS "reel"
+			RENVOYER nType = owlRéel OU nType = owlEntier
+			CAS "booleen"
+			RENVOYER nType = owlBooléen
+			CAS "date"
+			RENVOYER nType = owlChaîne OU nType = owlDate
+			CAS "dateheure"
+			RENVOYER nType = owlChaîne OU nType = owlDateHeure OU nType = owlDate
+		FIN
+		RENVOYER Faux
+	FIN
+
+	// Ajoute oNouvelle à la condition courante (bAncienne : il y en a une) par l'opérateur (« AND » ou « OR », avec ses espaces), entre parenthèses ; sans condition courante, c'est la nouvelle. L'appelant ignore une condition vide.
+	PROCEDURE EbJointCondition(sOperateur est une chaîne, oAncienne est un cEbSql, bAncienne est un booléen, oNouvelle est un cEbSql) : cEbSql
+		SI PAS bAncienne ALORS
+			RENVOYER oNouvelle
+		FIN
+		tabDeux est un tableau
+		TableauAjoute(tabDeux, oAncienne)
+		TableauAjoute(tabDeux, oNouvelle)
+		oJointe est un cEbSql
+		oJointe.Joint(sOperateur, tabDeux)
+		RENVOYER oJointe
+	FIN
+
+	// Vrai si deux colonnes de ces natures peuvent être comparées (jointure) : la même nature, ou un entier avec un réel.
+	PROCEDURE EbNaturesComparables(sUne est une chaîne, sAutre est une chaîne) : booléen
+		SI sUne = sAutre ALORS
+			RENVOYER Vrai
+		FIN
+		RENVOYER (sUne = "entier" ET sAutre = "reel") OU (sUne = "reel" ET sAutre = "entier")
+	FIN
+
+	// Lève (7001) si une colonne citée par cette expression n'est pas de la table de la requête.
+	PROCEDURE EbVerifieColonnes(oTable est un cEbTable, oExpression est un cEbSql)
+		tabTables est un tableau
+		TableauAjoute(tabTables, oTable)
+		EbVerifieColonnesTables(tabTables, oExpression)
+	FIN
+
+	// Lève (7001) si une colonne citée par cette expression n'est d'aucune des tables de la requête (tabTables : des cEbTable).
+	PROCEDURE EbVerifieColonnesTables(tabTables est un tableau, oExpression est un cEbSql)
+		sNoms est une chaîne = ""
+		POUR TOUT oCandidate DE tabTables
+			oTable est un cEbTable = oCandidate
+			sNoms += EbSeparateurSql(sNoms) + oTable.Nom()
+		FIN
+		POUR TOUT sReference DE oExpression.Colonnes()
+			bTrouvee est un booléen = Faux
+			POUR TOUT oAutreCandidate DE tabTables
+				oTableLue est un cEbTable = oAutreCandidate
+				sPrefixe  est une chaîne  = oTableLue.Nom() + "."
+				SI Gauche(sReference, Taille(sPrefixe)) = sPrefixe ALORS
+					bTrouvee = Vrai
+				FIN
+			FIN
+			SI PAS bTrouvee ALORS
+				ExceptionDéclenche(7001, "La colonne " + sReference + " n'appartient pas aux tables de cette requête (" + sNoms + "). Avez-vous oublié la jointure ?")
+			FIN
+		FIN
+	FIN
+
+	// Les colonnes d'une ligne à écrire (un tableau associatif colonne -> valeur), dans l'ordre de la table, après vérification : une colonne qui n'est pas de la table (7001), une valeur qui ne convient pas à sa colonne,
+	// Null pour une colonne qui refuse NULL (7002), une ligne sans aucune colonne (7002). sMethode nomme l'appel, pour le message. Rend des cEbColonne.
+	PROCEDURE EbColonnesDeLigne(oTable est un cEbTable, ligne est un tableau associatif, sMethode est une chaîne) : tableau
+		tabColonnes est un tableau
+		POUR TOUT valeur, sCle DE ligne
+			SI PAS oTable.Possede(sCle) ALORS
+				ExceptionDéclenche(7001, "La colonne « " + sCle + " » n'existe pas dans la table « " + oTable.Nom() + " » (" + sMethode + "()).")
+			FIN
+			oColonneLue est un cEbColonne = oTable.ColonneNommee(sCle)
+			oColonneLue.VerifieValeurEcriture(valeur, sMethode)
+		FIN
+		POUR TOUT oCandidate DE oTable.Colonnes()
+			oColonne est un cEbColonne = oCandidate
+			SI EbLigneADesValeurs(ligne, oColonne.Nom()) ALORS
+				TableauAjoute(tabColonnes, oColonne)
+			FIN
+		FIN
+		SI tabColonnes..Occurrence = 0 ALORS
+			ExceptionDéclenche(7002, sMethode + "() sans aucune colonne : une ligne à écrire a au moins une valeur.")
+		FIN
+		RENVOYER tabColonnes
+	FIN
+
+	// Vrai si ces deux listes de cEbColonne portent les mêmes colonnes, dans le même ordre (les lignes d'un INSERT doivent toutes écrire les mêmes colonnes).
+	PROCEDURE EbMemesColonnes(tabA est un tableau, tabB est un tableau) : booléen
+		SI tabA..Occurrence <> tabB..Occurrence ALORS
+			RENVOYER Faux
+		FIN
+		bMemes est un booléen = Vrai
+		POUR i = 1 À tabA..Occurrence
+			oA est un cEbColonne = tabA[i]
+			oB est un cEbColonne = tabB[i]
+			SI oA.Nom() <> oB.Nom() ALORS
+				bMemes = Faux
+			FIN
+		FIN
+		RENVOYER bMemes
+	FIN
+
+	// La fin « RETURNING … » d'une écriture : les colonnes demandées (des cEbColonne), chacune sous son alias « table__colonne » comme dans un SELECT, ou « » si aucune n'est demandée.
+	PROCEDURE EbFinRetour(dialecte est un iEbDialecteSql, tabRetour est un tableau) : chaîne
+		SI tabRetour..Occurrence = 0 ALORS
+			RENVOYER ""
+		FIN
+		sColonnes est une chaîne = ""
+		POUR TOUT oCandidate DE tabRetour
+			oColonne est un cEbColonne = oCandidate
+			sColonnes += EbSeparateurSql(sColonnes) + dialecte.Nom(oColonne.Nom()) + " AS " + dialecte.Nom(oColonne.NomTable() + "__" + oColonne.Nom())
+		FIN
+		RENVOYER dialecte.Returning(sColonnes)
+	FIN
+
+	// Le nom d'une table, avec son schéma éventuel, échappé partie par partie : crm.clients s'écrit "crm"."clients" (et non "crm.clients", qui serait un seul nom).
+	PROCEDURE EbNomTableSql(dialecte est un iEbDialecteSql, sTable est une chaîne) : chaîne
+		sRes est une chaîne = ""
+		POUR TOUT sPartie DE ChaîneDécoupe(sTable, ".")
+			SI sRes <> "" ALORS
+				sRes += "."
+			FIN
+			sRes += dialecte.Nom(sPartie)
+		FIN
+		RENVOYER sRes
+	FIN
+
+	// Vrai si Burin sait écrire le SQL de ce fournisseur (les valeurs de --base) : sqlite et postgresql. HFSQL a son propre SQL, pas encore de dialecte.
+	PROCEDURE EbDialecteExiste(sFournisseur est une chaîne) : booléen
+		RENVOYER sFournisseur = "sqlite" OU sFournisseur = "postgresql"
+	FIN
+
+	// Le dialecte de ce fournisseur. Lève (7011) pour un fournisseur sans dialecte : à tester avec EbDialecteExiste quand l'absence n'est pas une erreur.
+	PROCEDURE EbDialecteDeBase(sFournisseur est une chaîne) : iEbDialecteSql
+		oSqlite   est un cEbDialecteSqlite
+		oPostgres est un cEbDialectePostgresql
+		SI sFournisseur = "sqlite" ALORS
+			RENVOYER oSqlite
+		FIN
+		SI sFournisseur = "postgresql" ALORS
+			RENVOYER oPostgres
+		FIN
+		ExceptionDéclenche(7011, "Pas de dialecte SQL pour le fournisseur « " + sFournisseur + " » : Burin écrit le SQL de sqlite et de postgresql.")
+		RENVOYER oSqlite
+	FIN
+
+	// Envoie la requête construite par la connexion (le plus souvent la base résiliente, cEbServiceBase.Base()) et rend le résultat. Ne rend JAMAIS un résultat en échec : lève 503 si la base est injoignable,
+	// 409 si elle refuse la requête pour une clé étrangère violée, 500 si elle la refuse autrement (le message de la base est celui de l'exception). Les écritures y gagnent la même règle que le repository généré.
+	PROCEDURE EbEnvoieRequete(oConnexion est un iEbConnexionSql, oRequete est un cEbRequete) : cEbResultatSql
+		oResultat est un cEbResultatSql = oConnexion.Envoie(oRequete.Texte(), oRequete.Parametres())
+		SI oResultat.Indisponible() ALORS
+			ExceptionDéclenche(503, oResultat.Message())
+		FIN
+		SI PAS oResultat.Succes() ALORS
+			// Une clé étrangère violée (une ligne qui vise une ligne absente, ou une ligne encore visée) est un CONFLIT avec l'état des données, pas une panne : 409, sans le texte de la base. SQLite écrit « FOREIGN KEY constraint failed », PostgreSQL « violates foreign key constraint » (mesurés, OWL 1.8.1).
+			SI Position(Minuscule(oResultat.Message()), "foreign key") > 0 ALORS
+				ExceptionDéclenche(409, "Opération refusée : elle viole une clé étrangère (la ligne visée n'existe pas, ou elle est encore visée par une autre).")
+			FIN
+			ExceptionDéclenche(500, oResultat.Message())
+		FIN
+		RENVOYER oResultat
+	FIN
+
+	// Les lignes d'un résultat, chacune lue colonne par colonne (cEbLigne), dans l'ordre rendu par la base.
+	PROCEDURE EbLignesDe(oResultat est un cEbResultatSql) : tableau
+		tabLignes est un tableau
+		POUR TOUT brute DE oResultat.Lignes()
+			oLigne est un cEbLigne(brute)
+			TableauAjoute(tabLignes, oLigne)
+		FIN
+		RENVOYER tabLignes
+	FIN
+
+	// « , » si la liste a déjà un élément, sinon « » : pour écrire une liste séparée par des virgules.
+	PROCEDURE EbSeparateurSql(sListe est une chaîne) : chaîne
+		SI Taille(sListe) > 0 ALORS
+			RENVOYER ", "
+		FIN
+		RENVOYER ""
+	FIN
+
+	// Lève (7001) si cette colonne n'est pas de la table (pour Returning).
+	PROCEDURE EbVerifieColonneDeLaTable(oTable est un cEbTable, oColonne est un cEbColonne, sMethode est une chaîne)
+		SI oColonne.NomTable() <> oTable.Nom() ALORS
+			ExceptionDéclenche(7001, "La colonne " + oColonne.Reference() + " n'est pas de la table « " + oTable.Nom() + " » (" + sMethode + "()).")
+		FIN
+	FIN
+
+	// Vrai si la ligne (un tableau associatif colonne -> valeur) a une valeur pour cette colonne : la casse du nom ne compte pas, comme pour la table.
+	PROCEDURE EbLigneADesValeurs(ligne est un tableau associatif, sColonne est une chaîne) : booléen
+		bTrouvee est un booléen = Faux
+		POUR TOUT valeur, sCle DE ligne
+			SI Minuscule(sCle) = Minuscule(sColonne) ALORS
+				bTrouvee = Vrai
+			FIN
+		FIN
+		RENVOYER bTrouvee
+	FIN
+
+	// La valeur de la ligne pour cette colonne (la casse du nom ne compte pas). À n'appeler qu'après EbColonnesDeLigne, qui a vérifié que la colonne y est.
+	PROCEDURE EbValeurDeLigne(ligne est un tableau associatif, oColonne est un cEbColonne) : JSON
+		jValeur est un JSON
+		POUR TOUT valeur, sCle DE ligne
+			SI Minuscule(sCle) = Minuscule(oColonne.Nom()) ALORS
+				jValeur = valeur
+			FIN
+		FIN
+		RENVOYER jValeur
+	FIN
+FIN

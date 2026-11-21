@@ -1,0 +1,181 @@
+// Tests des jointures et du comptage de cEbSelect, sans aucune base : InnerJoin, LeftJoin, EqCol, ToSQLCount. Les tables articles et categories ont chacune un « id » et un « nom » : chaque colonne a son alias « table__colonne ».
+
+// Lance ToSQL() et rend « code|message » s'il lève, ou « » s'il réussit.
+PROCEDURE EbTestRefusJointure(oSelect est un cEbSelect) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oEssaiRequete est un cEbRequete = oSelect.ToSQL()
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Le début de tout SELECT de articles joint à categories : les cinq colonnes, chacune sous son alias.
+PROCEDURE EbTestSelectArticlesCategories() : chaîne
+	RENVOYER `SELECT "articles"."id" AS "articles__id", "articles"."nom" AS "articles__nom", "articles"."categorie_id" AS "articles__categorie_id", "categories"."id" AS "categories__id", "categories"."nom" AS "categories__nom" FROM "articles"`
+FIN
+
+// Une jointure interne : toutes les colonnes des deux tables, les deux « nom » sous des alias différents, la condition ON entre les deux colonnes, sans paramètre.
+PROCEDURE scenario_inner_join()
+	oBurin      est un cEbBurin   = EbTestBurin()
+	oArticles   est un cEbTable   = EbTestArticles()
+	oCategories est un cEbTable   = EbTestCategories()
+	oCle        est un cEbColonne = oArticles.ColonneNommee("categorie_id")
+	oId         est un cEbColonne = oCategories.ColonneNommee("id")
+	oRequete    est un cEbRequete = oBurin.Select().From(oArticles).InnerJoin(oCategories, oCle.EqCol(oId)).ToSQL()
+	dbgVérifieEgalité(oRequete.Texte(), EbTestSelectArticlesCategories() + ` INNER JOIN "categories" ON "articles"."categorie_id" = "categories"."id"`, "INNER JOIN")
+	dbgVérifieEgalité(oRequete.NbParametres(), 0, "aucun paramètre")
+FIN
+
+// Une jointure externe gauche : LEFT JOIN.
+PROCEDURE scenario_left_join()
+	oBurin      est un cEbBurin   = EbTestBurin()
+	oArticles   est un cEbTable   = EbTestArticles()
+	oCategories est un cEbTable   = EbTestCategories()
+	oCle        est un cEbColonne = oArticles.ColonneNommee("categorie_id")
+	oId         est un cEbColonne = oCategories.ColonneNommee("id")
+	oRequete    est un cEbRequete = oBurin.Select().From(oArticles).LeftJoin(oCategories, oCle.EqCol(oId)).ToSQL()
+	dbgVérifieEgalité(oRequete.Texte(), EbTestSelectArticlesCategories() + ` LEFT JOIN "categories" ON "articles"."categorie_id" = "categories"."id"`, "LEFT JOIN")
+FIN
+
+// Où, ordre et limite s'écrivent après la jointure, sur les colonnes de n'importe quelle table de la requête ; les valeurs restent des paramètres.
+PROCEDURE scenario_join_avec_where_order_limit()
+	oBurin      est un cEbBurin           = EbTestBurin()
+	oArticles   est un cEbTable           = EbTestArticles()
+	oCategories est un cEbTable           = EbTestCategories()
+	oCle        est un cEbColonne         = oArticles.ColonneNommee("categorie_id")
+	oId         est un cEbColonne         = oCategories.ColonneNommee("id")
+	oNomCat     est un cEbColonne         = oCategories.ColonneNommee("nom")
+	oNomArt     est un cEbColonne         = oArticles.ColonneNommee("nom")
+	oRequete    est un cEbRequete         = oBurin.Select().From(oArticles).InnerJoin(oCategories, oCle.EqCol(oId)).Where(oNomCat.Eq("livres")).OrderBy(oNomArt.Asc()).Limit(5).ToSQL()
+	tabP        est un tableau associatif = oRequete.Parametres()
+	dbgVérifieEgalité(oRequete.Texte(), EbTestSelectArticlesCategories() + ` INNER JOIN "categories" ON "articles"."categorie_id" = "categories"."id" WHERE "categories"."nom" = {p1} ORDER BY "articles"."nom" ASC LIMIT 5`, "jointure, condition, ordre, limite")
+	dbgVérifieEgalité(tabP["p1"], "livres", "la valeur reste un paramètre")
+FIN
+
+// Plusieurs jointures : chacune avec sa condition, dans l'ordre où elles sont ajoutées.
+PROCEDURE scenario_deux_jointures()
+	oBurin      est un cEbBurin   = EbTestBurin()
+	oProduits   est un cEbTable   = EbTestProduits()
+	oArticles   est un cEbTable   = EbTestArticles()
+	oCategories est un cEbTable   = EbTestCategories()
+	oIdProduit  est un cEbColonne = oProduits.ColonneNommee("id")
+	oIdArticle  est un cEbColonne = oArticles.ColonneNommee("id")
+	oCle        est un cEbColonne = oArticles.ColonneNommee("categorie_id")
+	oId         est un cEbColonne = oCategories.ColonneNommee("id")
+	oRequete    est un cEbRequete = oBurin.Select().From(oArticles).InnerJoin(oCategories, oCle.EqCol(oId)).LeftJoin(oProduits, oIdArticle.EqCol(oIdProduit)).ToSQL()
+	dbgVérifieVrai(Position(oRequete.Texte(), `INNER JOIN "categories" ON "articles"."categorie_id" = "categories"."id" LEFT JOIN "produits" ON "articles"."id" = "produits"."id"`) > 0, "deux jointures, dans l'ordre : " + oRequete.Texte())
+	dbgVérifieVrai(Position(oRequete.Texte(), `"produits"."cree_le" AS "produits__cree_le"`) > 0, "les colonnes de la troisième table sont sélectionnées")
+FIN
+
+// COUNT : une seule colonne « total », sans ordre ni limite, avec la jointure et la condition.
+PROCEDURE scenario_count_avec_jointure_et_condition()
+	oBurin      est un cEbBurin           = EbTestBurin()
+	oArticles   est un cEbTable           = EbTestArticles()
+	oCategories est un cEbTable           = EbTestCategories()
+	oCle        est un cEbColonne         = oArticles.ColonneNommee("categorie_id")
+	oId         est un cEbColonne         = oCategories.ColonneNommee("id")
+	oNomCat     est un cEbColonne         = oCategories.ColonneNommee("nom")
+	oNomArt     est un cEbColonne         = oArticles.ColonneNommee("nom")
+	oRequete    est un cEbRequete         = oBurin.Select().From(oArticles).InnerJoin(oCategories, oCle.EqCol(oId)).Where(oNomCat.Eq("livres")).OrderBy(oNomArt.Asc()).Limit(5).ToSQLCount()
+	tabP        est un tableau associatif = oRequete.Parametres()
+	dbgVérifieEgalité(oRequete.Texte(), `SELECT COUNT(*) AS "total" FROM "articles" INNER JOIN "categories" ON "articles"."categorie_id" = "categories"."id" WHERE "categories"."nom" = {p1}`, "COUNT, sans ORDER BY ni LIMIT")
+	dbgVérifieEgalité(tabP["p1"], "livres", "la valeur reste un paramètre")
+FIN
+
+// COUNT sans jointure ni condition.
+PROCEDURE scenario_count_simple()
+	oBurin    est un cEbBurin   = EbTestBurin()
+	oProduits est un cEbTable   = EbTestProduits()
+	oRequete  est un cEbRequete = oBurin.Select().From(oProduits).ToSQLCount()
+	dbgVérifieEgalité(oRequete.Texte(), `SELECT COUNT(*) AS "total" FROM "produits"`, "COUNT de toute la table")
+FIN
+
+// Une colonne d'une table qui n'est PAS dans la requête est refusée (7001), le message liste les tables de la requête.
+PROCEDURE scenario_colonne_d_une_table_absente_refusee()
+	oBurin      est un cEbBurin   = EbTestBurin()
+	oArticles   est un cEbTable   = EbTestArticles()
+	oCategories est un cEbTable   = EbTestCategories()
+	oProduits   est un cEbTable   = EbTestProduits()
+	oCle        est un cEbColonne = oArticles.ColonneNommee("categorie_id")
+	oId         est un cEbColonne = oCategories.ColonneNommee("id")
+	oPrix       est un cEbColonne = oProduits.ColonneNommee("prix")
+	sRefus      est une chaîne    = EbTestRefusJointure(oBurin.Select().From(oArticles).InnerJoin(oCategories, oCle.EqCol(oId)).Where(oPrix.Gt(1)))
+	dbgVérifieEgalité(Gauche(sRefus, 5), "7001|", "colonne d'une table absente")
+	dbgVérifieVrai(Position(sRefus, "articles, categories") > 0, "le message liste les tables de la requête : " + sRefus)
+	sRefusCount est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oEssai est un cEbRequete = oBurin.Select().From(oArticles).Where(oPrix.Gt(1)).ToSQLCount()
+	FAIRE
+		sRefusCount = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sRefusCount, "7001", "le comptage fait les mêmes vérifications")
+FIN
+
+// Une condition de jointure qui cite une colonne d'une table absente est refusée (7001) : la jointure ne peut parler que des tables de la requête.
+PROCEDURE scenario_condition_de_jointure_hors_requete_refusee()
+	oBurin      est un cEbBurin   = EbTestBurin()
+	oArticles   est un cEbTable   = EbTestArticles()
+	oCategories est un cEbTable   = EbTestCategories()
+	oProduits   est un cEbTable   = EbTestProduits()
+	oId         est un cEbColonne = oCategories.ColonneNommee("id")
+	oIdProduit  est un cEbColonne = oProduits.ColonneNommee("id")
+	sRefus      est une chaîne    = EbTestRefusJointure(oBurin.Select().From(oArticles).InnerJoin(oCategories, oId.EqCol(oIdProduit)))
+	dbgVérifieEgalité(Gauche(sRefus, 5), "7001|", "la condition cite produits, absente de la requête")
+FIN
+
+// Une jointure sans condition est refusée tout de suite (7009) : elle ferait un produit cartésien.
+PROCEDURE scenario_jointure_sans_condition_refusee()
+	oBurin      est un cEbBurin = EbTestBurin()
+	oArticles   est un cEbTable = EbTestArticles()
+	oCategories est un cEbTable = EbTestCategories()
+	oVide       est un cEbSql
+	sRefus      est une chaîne  = ""
+	QUAND EXCEPTION DANS
+		oEssai est un cEbSelect = oBurin.Select().From(oArticles).InnerJoin(oCategories, oVide)
+	FAIRE
+		sRefus = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sRefus, "7009", "InnerJoin sans condition")
+	sRefusGauche est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oEssaiGauche est un cEbSelect = oBurin.Select().From(oArticles).LeftJoin(oCategories, oVide)
+	FAIRE
+		sRefusGauche = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sRefusGauche, "7009", "LeftJoin sans condition")
+FIN
+
+// La même table deux fois, ou la table du From jointe à elle-même, est refusée (7009) : sans alias de table, les noms seraient ambigus.
+PROCEDURE scenario_table_en_double_refusee()
+	oBurin      est un cEbBurin   = EbTestBurin()
+	oArticles   est un cEbTable   = EbTestArticles()
+	oCategories est un cEbTable   = EbTestCategories()
+	oCle        est un cEbColonne = oArticles.ColonneNommee("categorie_id")
+	oId         est un cEbColonne = oCategories.ColonneNommee("id")
+	oIdArticle  est un cEbColonne = oArticles.ColonneNommee("id")
+	sSoiMeme    est une chaîne    = EbTestRefusJointure(oBurin.Select().From(oArticles).InnerJoin(oArticles, oIdArticle.EqCol(oCle)))
+	dbgVérifieEgalité(Gauche(sSoiMeme, 5), "7009|", "la table du From jointe à elle-même")
+	sDeuxFois est une chaîne = EbTestRefusJointure(oBurin.Select().From(oArticles).InnerJoin(oCategories, oCle.EqCol(oId)).LeftJoin(oCategories, oCle.EqCol(oId)))
+	dbgVérifieEgalité(Gauche(sDeuxFois, 5), "7009|", "la même table jointe deux fois")
+FIN
+
+// EqCol compare des colonnes de même nature (un entier et un réel passent) : un texte avec un entier est refusé (7002).
+PROCEDURE scenario_eqcol_natures_incompatibles_refusees()
+	oArticles   est un cEbTable   = EbTestArticles()
+	oCategories est un cEbTable   = EbTestCategories()
+	oProduits   est un cEbTable   = EbTestProduits()
+	oCle        est un cEbColonne = oArticles.ColonneNommee("categorie_id")
+	oNom        est un cEbColonne = oCategories.ColonneNommee("nom")
+	oPrix       est un cEbColonne = oProduits.ColonneNommee("prix")
+	sRefus      est une chaîne    = ""
+	QUAND EXCEPTION DANS
+		oEssai est un cEbSql = oCle.EqCol(oNom)
+	FAIRE
+		sRefus = ExceptionInfo(errCode)
+	FIN
+	dbgVérifieEgalité(sRefus, "7002", "entier avec texte")
+	oComparable est un cEbSql = oCle.EqCol(oPrix)
+	dbgVérifieVrai(PAS oComparable.Vide(), "entier avec réel : accepté")
+FIN

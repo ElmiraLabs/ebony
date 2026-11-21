@@ -1,0 +1,90 @@
+// La fabrique d'une ressource (database/factories/<dossier>/cFabrique<Nom>.owl) : construit des entités d'exemple pour les tests et le seeding. Écrite par « ebony make resource » (une fois, jamais remplacée).
+EbContenuFabrique est une CollectionDeProcédures
+
+	// Le chemin de la fabrique, relatif au projet, avec des « / ».
+	PROCEDURE EbCheminFabrique(oDemande est un cEbDemandeMake) : chaîne
+		RENVOYER "database/factories/" + oDemande.Dossier() + "/cFabrique" + oDemande.Pascal() + ".owl"
+	FIN
+
+	// L'appel du générateur pour un champ texte : avec sa sorte (ValeurTexteDeSorte("produit", "nom")) si l'utilisateur en a donné une (~sorte), sinon par le nom de la colonne seul (ValeurTexte("nom")).
+	PROCEDURE EbAppelTexte(oChamp est un cEbChampTable) : chaîne
+		SI oChamp.Sorte() <> "" ALORS
+			RENVOYER "ValeurTexteDeSorte(" + EbGuillemets(oChamp.Sorte()) + ", " + EbGuillemets(oChamp.NomColonne()) + ")"
+		FIN
+		RENVOYER "ValeurTexte(" + EbGuillemets(oChamp.NomColonne()) + ")"
+	FIN
+
+	// La méthode du générateur qui rend la valeur d'un champ, selon son type.
+	PROCEDURE EbAppelGenerateur(oChamp est un cEbChampTable) : chaîne
+		SELON oChamp.TypeChamp()
+			CAS "entier"
+			RENVOYER ":oGenerateur.ValeurEntier()"
+			CAS "reel"
+			RENVOYER ":oGenerateur.ValeurReel()"
+			CAS "booleen"
+			RENVOYER ":oGenerateur.ValeurBooleen()"
+			CAS "date"
+			RENVOYER ":oGenerateur.ValeurDate()"
+			CAS "dateheure"
+			RENVOYER ":oGenerateur.ValeurDateHeure()"
+			AUTRE CAS
+			RENVOYER ":oGenerateur." + EbAppelTexte(oChamp)
+		FIN
+	FIN
+
+	// Le texte de la fabrique : Cree() / CreeAvec(surcharges) rendent une entité EN MÉMOIRE ; Persiste(repository) / PersisteAvec(repository, surcharges) l'enregistrent par un repository (mémoire pour les tests, SQL pour le seeding).
+	// « surcharges » : un tableau associatif colonne vers valeur, pour les champs qu'un test veut fixer. Une clé entière générée par la base vaut toujours 0 (le repository la donne).
+	PROCEDURE EbContenuFabriqueRessource(oDemande est un cEbDemandeMake) : chaîne
+		sPascal  est une chaîne      = oDemande.Pascal()
+		sContrat est une chaîne      = "iRepo" + sPascal
+		sArgs    est une chaîne      = ""
+		oTexte   est un cEbTexteCode
+		oTexte.Ligne(0, "// Fabrique de la ressource « " + EbNomAffiche(oDemande) + " » : des entités d'exemple pour les tests et le seeding.")
+		oTexte.Ligne(0, "cFabrique" + sPascal + " est une Classe")
+		oTexte.Ligne(0, "PRIVÉ")
+		oTexte.Ligne(1, "oGenerateur est un iEbGenerateur")
+		oTexte.LigneVide()
+		oTexte.Ligne(1, "PROCEDURE Constructeur(generateur est un iEbGenerateur)")
+		oTexte.Ligne(2, ":oGenerateur = generateur")
+		oTexte.Ligne(1, "FIN")
+		oTexte.LigneVide()
+		oTexte.Ligne(1, "PROCEDURE PUBLIQUE Cree() : c" + sPascal)
+		oTexte.Ligne(2, "tabAucune est un tableau associatif")
+		oTexte.Ligne(2, "oEntite est un c" + sPascal + " = :CreeAvec(tabAucune)")
+		oTexte.Ligne(2, "RENVOYER oEntite")
+		oTexte.Ligne(1, "FIN")
+		oTexte.LigneVide()
+		oTexte.Ligne(1, "// Idem, avec des champs fixés : surcharges rend la valeur à la place de celle du générateur (clé = nom de la colonne).")
+		oTexte.Ligne(1, "PROCEDURE PUBLIQUE CreeAvec(surcharges est un tableau associatif) : c" + sPascal)
+		oTexte.Ligne(2, ":oGenerateur.NouvelleLigne()")
+		POUR TOUT oChamp DE oDemande.Champs()
+			SI sArgs <> "" ALORS
+				sArgs += ", "
+			FIN
+			SI EbCleGeneree(oChamp) ALORS
+				sArgs += "0"
+			SINON
+				oTexte.Ligne(2, oChamp.NomParametre() + " est " + EbArticleTypeOwl(oChamp.TypeOwl()) + " = " + EbAppelGenerateur(oChamp))
+				oTexte.Ligne(2, "SI TableauCherche(surcharges, " + EbGuillemets(oChamp.NomColonne()) + ") > 0 ALORS")
+				oTexte.Ligne(3, oChamp.NomParametre() + " = surcharges[" + EbGuillemets(oChamp.NomColonne()) + "]")
+				oTexte.Ligne(2, "FIN")
+				sArgs += oChamp.NomParametre()
+			FIN
+		FIN
+		oTexte.Ligne(2, "oEntite est un c" + sPascal + "(" + sArgs + ")")
+		oTexte.Ligne(2, "RENVOYER oEntite")
+		oTexte.Ligne(1, "FIN")
+		oTexte.LigneVide()
+		oTexte.Ligne(1, "PROCEDURE PUBLIQUE Persiste(repository est un " + sContrat + ") : c" + sPascal)
+		oTexte.Ligne(2, "oEntite est un c" + sPascal + " = :Cree()")
+		oTexte.Ligne(2, "RENVOYER repository.Ajoute(oEntite)")
+		oTexte.Ligne(1, "FIN")
+		oTexte.LigneVide()
+		oTexte.Ligne(1, "PROCEDURE PUBLIQUE PersisteAvec(repository est un " + sContrat + ", surcharges est un tableau associatif) : c" + sPascal)
+		oTexte.Ligne(2, "oEntite est un c" + sPascal + " = :CreeAvec(surcharges)")
+		oTexte.Ligne(2, "RENVOYER repository.Ajoute(oEntite)")
+		oTexte.Ligne(1, "FIN")
+		oTexte.Ligne(0, "FIN")
+		RENVOYER oTexte.Texte()
+	FIN
+FIN

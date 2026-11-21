@@ -1,0 +1,25 @@
+// Tests de EbDatesIso : les formats ISO 8601 (date, date et heure), le format ET l'existence au calendrier.
+
+// Les dates ISO 8601 : le format ET l'existence au calendrier (années bissextiles comprises).
+PROCEDURE scenario_dates_iso()
+	dbgVérifieVrai(EbDateIsoValide("2026-11-16"), "une date")
+	dbgVérifieVrai(EbDateIsoValide("2024-02-29"), "29 février d'une année bissextile")
+	dbgVérifieFaux(EbDateIsoValide("2026-02-29"), "29 février d'une autre année")
+	dbgVérifieFaux(EbDateIsoValide("1900-02-29"), "1900 n'est pas bissextile")
+	dbgVérifieVrai(EbDateIsoValide("2000-02-29"), "2000 l'est")
+	dbgVérifieFaux(EbDateIsoValide("2026-04-31"), "avril n'a que 30 jours")
+	dbgVérifieFaux(EbDateIsoValide("2026-13-01"), "mois 13")
+	dbgVérifieFaux(EbDateIsoValide("2026-00-10"), "mois 0")
+	dbgVérifieFaux(EbDateIsoValide("2026-11-00"), "jour 0")
+	dbgVérifieFaux(EbDateIsoValide("16/11/2026"), "pas ISO")
+	dbgVérifieFaux(EbDateIsoValide("2026-1-5"), "sans zéros")
+	dbgVérifieFaux(EbDateIsoValide("2026-11-16 "), "espace en trop")
+	dbgVérifieFaux(EbDateIsoValide(""), "vide")
+	dbgVérifieVrai(EbDateHeureIsoValide("2026-11-16T10:15:30"), "date et heure")
+	dbgVérifieVrai(EbDateHeureIsoValide("2026-11-16T23:59:59Z"), "avec Z")
+	dbgVérifieFaux(EbDateHeureIsoValide("2026-11-16T24:00:00"), "24 heures")
+	dbgVérifieFaux(EbDateHeureIsoValide("2026-11-16T10:60:00"), "60 minutes")
+	dbgVérifieFaux(EbDateHeureIsoValide("2026-11-16T10:15:60"), "60 secondes")
+	dbgVérifieFaux(EbDateHeureIsoValide("2026-11-16"), "sans heure")
+	dbgVérifieFaux(EbDateHeureIsoValide("2026-02-30T10:00:00"), "date impossible")
+FIN

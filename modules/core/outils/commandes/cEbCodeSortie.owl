@@ -1,0 +1,19 @@
+// Le code de sortie de la commande « ebony » : posé par une commande en échec (EbSortieEnEchec, EbSignaleEchec), rendu à la fin du programme par Fermeture() de projet.owl.
+// Pourquoi une classe : OWL 1.9.0 donne le code d'un « RENVOYER <entier> » seulement dans Fermeture() du bloc Projet (ailleurs, avec un projet.owl dans le dossier, le code est 0),
+// et Fermeture() ne reçoit rien : le code est tenu par un membre GLOBAL, comme cEbServiceApplication. Sans appel à Pose, le code est 0.
+// Remplace le fichier « -sortie= » que le lanceur relisait (OWL 1.8.1 n'avait pas de code de sortie).
+cEbCodeSortie est une Classe
+PRIVÉ
+	GLOBAL
+	nCode est un entier = 0
+
+	// Pose le code de sortie du programme (1 = échec, 2 = usage incorrect). Appelé avant la fin du programme.
+	PROCEDURE PUBLIQUE GLOBALE Pose(nValeur est un entier)
+		cEbCodeSortie.nCode = nValeur
+	FIN
+
+	// Le code posé, ou 0 si aucune commande n'a échoué.
+	PROCEDURE PUBLIQUE GLOBALE Code() : entier
+		RENVOYER cEbCodeSortie.nCode
+	FIN
+FIN

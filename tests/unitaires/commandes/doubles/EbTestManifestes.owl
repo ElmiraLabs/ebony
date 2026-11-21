@@ -1,0 +1,170 @@
+// Le manifeste du module burin tel que l'installation le livre (modules/burin/execution/modules/burin.json), pour les faux disques des tests : sa copie ici donne aux suites les variables DB_* que le coeur n'ecrit plus lui-meme.
+// Copie, donc a tenir d'accord avec le vrai : un projet genere par le vrai ebony avec le vrai manifeste est controle par tests/integration/lanceur.ps1 (groupe projet : variables DB_* de SQLite, de PostgreSQL et de HFSQL).
+EbTestManifestes est une CollectionDeProcédures
+
+	PROCEDURE EbTestManifesteBurin() : chaîne
+		sTexte est une chaîne = `{
+	"nom": "burin",
+	"composant": {
+		"fabrique": "cEbServiceBase",
+		"arguments": ["base.fournisseur"]
+	},
+	"fournisseurs": {
+		"valeurs": ["sqlite", "postgresql", "hfsql"],
+		"defaut": "sqlite",
+		"capacites": [
+			{ "nom": "migrations", "fournisseurs": ["sqlite", "postgresql"] }
+		]
+	},
+	"environnement": [
+		{
+			"cle": "DB_FICHIER",
+			"type": "chemin",
+			"defaut": "storage/app.db",
+			"description": "Fichier de la base SQLite.",
+			"fournisseur": ["sqlite"]
+		},
+		{
+			"cle": "DB_HOTE",
+			"type": "texte",
+			"defaut": "localhost",
+			"description": "Hôte du serveur de base de données.",
+			"fournisseur": ["postgresql", "hfsql"]
+		},
+		{
+			"cle": "DB_PORT",
+			"type": "port",
+			"defaut": "5432",
+			"description": "Port du serveur de base de données.",
+			"fournisseur": ["postgresql"]
+		},
+		{
+			"cle": "DB_PORT",
+			"type": "port",
+			"defaut": "4900",
+			"description": "Port du serveur de base de données.",
+			"fournisseur": ["hfsql"]
+		},
+		{
+			"cle": "DB_NOM",
+			"type": "texte",
+			"defaut": "{dossier}",
+			"description": "Nom de la base.",
+			"fournisseur": ["postgresql", "hfsql"]
+		},
+		{
+			"cle": "DB_UTILISATEUR",
+			"type": "texte",
+			"defaut": "postgres",
+			"description": "Utilisateur de la base.",
+			"fournisseur": ["postgresql"]
+		},
+		{
+			"cle": "DB_UTILISATEUR",
+			"type": "texte",
+			"defaut": "admin",
+			"description": "Utilisateur de la base.",
+			"fournisseur": ["hfsql"]
+		},
+		{
+			"cle": "DB_MOT_DE_PASSE",
+			"type": "texte",
+			"secret": true,
+			"description": "Mot de passe de la base.",
+			"fournisseur": ["postgresql", "hfsql"]
+		},
+		{
+			"cle": "DB_TLS",
+			"type": "liste",
+			"valeurs": ["verifie", "ca", "accepte", "desactive"],
+			"defaut": "verifie",
+			"description": "Chiffrement TLS vers la base : verifie (certificat et nom du serveur vérifiés, défaut), ca (chaîne de certificats vérifiée, pas le nom), accepte (chiffré, certificat non vérifié), desactive (aucun TLS : serveur local de développement seulement).",
+			"fournisseur": ["postgresql"]
+		},
+		{
+			"cle": "DB_CERTIFICAT_CA",
+			"type": "chemin",
+			"description": "Fichier PEM de l'autorité de certification du serveur (CA interne, certificat auto-signé) ; facultatif, sans lui la liste de confiance d'OWL s'applique.",
+			"fournisseur": ["postgresql"]
+		},
+		{
+			"cle": "APP_ENV",
+			"type": "liste",
+			"valeurs": ["developpement", "test", "production"],
+			"defaut": "developpement",
+			"description": "Environnement d'exécution : developpement (défaut), test ou production. La commande de remplissage de la base (seed) refuse tout autre environnement que developpement et test."
+		}
+	]
+}`
+		RENVOYER sTexte
+	FIN
+
+	// Les options d'un projet avec les variables que le manifeste de burin déclare pour ce fournisseur : ce que le flux réel obtient en lisant l'installation (AvecModules). Un kit sans base (fournisseur « ») n'en reçoit aucune.
+	PROCEDURE EbTestOptionsAvecBurin(sKit est une chaîne, sBase est une chaîne, bAuth est un booléen, sTable est une chaîne) : cEbOptionsProjet
+		tabVide est un tableau
+		oBrutes est un cEbOptionsProjet = cEbOptionsProjet(sKit, sBase, bAuth, sTable)
+		SI sBase = "" ALORS
+			RENVOYER oBrutes.AvecModules(tabVide, tabVide)
+		FIN
+		oOptions est un cEbOptionsProjet = oBrutes.AvecModules(EbVariablesDuManifeste(EbTestManifesteBurin(), "burin.json", sBase), tabVide)
+		RENVOYER oOptions
+	FIN
+
+	// Installe le manifeste de burin (celui d'EbTestManifesteBurin) dans l'installation d'un faux disque (D:\ebony) : l'ebony installé le lit, comme il lirait le vrai.
+	PROCEDURE EbTestInstalleManifesteBurin(oDisque est un cEbSystemeFichiersFictif)
+		oDisque.CreeDossier("D:\ebony\modules\burin\execution\modules")
+		oDisque.EcritTexte("D:\ebony\modules\burin\execution\modules\burin.json", EbTestManifesteBurin())
+	FIN
+
+	// Les fournisseurs que le manifeste de burin offre (valeurs permises de --base, défaut, capacités) : ce que cEbBibliothequeInstallee.Fournisseurs() rend pour une installation réelle.
+	PROCEDURE EbTestFournisseurs() : cEbFournisseursModule
+		oFournisseurs est un cEbFournisseursModule = EbFournisseursDuManifeste(EbTestManifesteBurin(), "burin.json")
+		RENVOYER oFournisseurs
+	FIN
+
+	// Une entrée « fichiers » qui est une migration lisible par « ebony migrate » : la classe qui implémente iEbMigration, dont Monte() et Descend() ne font que TableauAjoute(tabSql, `instruction`) puis RENVOYER tabSql.
+	// sConditions : membres facultatifs déjà écrits en JSON (« » ou `"option": "auth", "commande": "new", `). Elle exige la capacité « migrations », garde un fichier existant et demande « ebony migrate » ensuite.
+	PROCEDURE EbTestEntreeMigration(sHorodatage est une chaîne, sIntention est une chaîne, sMonte est une chaîne, sDescend est une chaîne, sConditions est une chaîne) : chaîne
+		sNom    est une chaîne = "M" + sHorodatage + "_" + sIntention
+		sAccent est une chaîne = Caract(96)
+		sJson   est une chaîne = `{ "chemin": "database/migrations/` + sNom + `.owl", ` + sConditions + `"capacite": "migrations", "existant": "conserve", "etape": "ebony migrate", "lignes": [ `
+		sJson += `"// Migration ` + sNom + `, fournie par un module de test.", `
+		sJson += `"c` + sNom + ` est une Classe implemente iEbMigration", "", `
+		sJson += `"\tPROCEDURE PUBLIQUE Nom() : chaîne", "\t\tRENVOYER \"` + sNom + `\"", "\tFIN", "", `
+		sJson += `"\tPROCEDURE PUBLIQUE Monte() : tableau de chaînes", "\t\ttabSql est un tableau de chaînes", "\t\tTableauAjoute(tabSql, ` + sAccent + sMonte + sAccent + `)", "\t\tRENVOYER tabSql", "\tFIN", "", `
+		sJson += `"\tPROCEDURE PUBLIQUE Descend() : tableau de chaînes", "\t\ttabSql est un tableau de chaînes", "\t\tTableauAjoute(tabSql, ` + sAccent + sDescend + sAccent + `)", "\t\tRENVOYER tabSql", "\tFIN", "FIN" ] }`
+		RENVOYER sJson
+	FIN
+
+	// Le contenu du membre « fichiers » d'un module auth de test : la migration des jetons (toujours, sans option) et, si sMonteUtilisateurs n'est pas vide, celle des utilisateurs (option auth, seulement avec « ebony new »).
+	PROCEDURE EbTestFichiersMigrations(sMonteJetons est une chaîne, sMonteUtilisateurs est une chaîne) : chaîne
+		sJson est une chaîne = EbTestEntreeMigration("202611100000", "CreeEbJetons", sMonteJetons, "DROP TABLE eb_jetons", "")
+		SI sMonteUtilisateurs <> "" ALORS
+			sJson += ", " + EbTestEntreeMigration("202611100001", "CreeUtilisateurs", sMonteUtilisateurs, "DROP TABLE {table_utilisateurs}", `"option": "auth", "commande": "new", `)
+		FIN
+		RENVOYER sJson
+	FIN
+
+	// Un manifeste complet qui ne déclare que ces fichiers de migration.
+	PROCEDURE EbTestManifesteMigrations(sMonteJetons est une chaîne, sMonteUtilisateurs est une chaîne) : chaîne
+		RENVOYER `{ "fichiers": [ ` + EbTestFichiersMigrations(sMonteJetons, sMonteUtilisateurs) + ` ] }`
+	FIN
+	// Le projet d'un « ebony new » sans option : kit api, le fournisseur par défaut du manifeste de burin, sans authentification. Le cœur n'a plus ce défaut : il vient du manifeste, au moment de la commande.
+	PROCEDURE EbTestOptionsParDefaut() : cEbOptionsProjet
+		oOptions est un cEbOptionsProjet = cEbOptionsProjet(EbKitDefaut(), EbTestFournisseurs().Defaut(), Faux, "")
+		RENVOYER oOptions
+	FIN
+
+	// Les contenus qu'on demandait « sans option » (kit et fournisseur par défaut), pour les tests.
+	PROCEDURE EbTestContenuConf(sNom est une chaîne, sDossier est une chaîne, sIdentifiant est une chaîne, sVersionBibliotheque est une chaîne) : chaîne
+		RENVOYER EbContenuConfAvecOptions(sNom, sDossier, sIdentifiant, sVersionBibliotheque, EbTestOptionsParDefaut())
+	FIN
+
+	PROCEDURE EbTestContenuAgents(sNom est une chaîne) : chaîne
+		RENVOYER EbContenuAgentsAvecOptions(sNom, EbTestOptionsParDefaut())
+	FIN
+
+	PROCEDURE EbTestContenuReadme(sNom est une chaîne) : chaîne
+		RENVOYER EbContenuReadmeAvecOptions(sNom, EbTestOptionsParDefaut())
+	FIN
+FIN

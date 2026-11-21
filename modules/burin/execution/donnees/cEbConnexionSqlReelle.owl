@@ -1,0 +1,93 @@
+// Adaptateur réel du port iEbConnexionSql : les connecteurs SQL d'OWL (sqlConnexion, SQLEnvoie), sur SQLite, PostgreSQL, HFSQL…
+// Constaté avec OWL 1.6.0 : Ouvre() rend un booléen et ne lève pas (PostgreSQL injoignable : Faux en ~2 s, la cause dans ErreurInfo()) ; après Ferme(), SQLEnvoie échoue « en douceur »
+// (Succès faux, message « connexion non ouverte ») et Ouvre() la rétablit sur la même variable ; ErreurInfo() N'EST PAS effacée après un succès : on ne la lit qu'après un échec.
+// L'appelant configure la sqlConnexion (Provider, Serveur, BaseDeDonnées, Utilisateur, MotDePasse…) et la remet ici, sans l'ouvrir.
+cEbConnexionSqlReelle est une Classe implemente iEbConnexionSql
+PRIVÉ
+	cnx      est une sqlConnexion
+	sSondage est une chaîne       = "SELECT 1"
+	sMessage est une chaîne       = ""
+	bCles    est un booléen       = Faux
+
+	PROCEDURE Constructeur(connexion est une sqlConnexion, sondage est une chaîne)
+		:cnx = connexion
+		:sSondage = sondage
+	FIN
+
+	// Demande à SQLite de VÉRIFIER les clés étrangères (PRAGMA foreign_keys = ON), à chaque ouverture : le réglage est PAR CONNEXION et SQLite l'a éteint par défaut, d'où des lignes orphelines acceptées sans lui.
+	// Mesuré (OWL 1.8.1) : avec lui, un INSERT qui vise une ligne absente et un DELETE d'une ligne encore référencée échouent (« FOREIGN KEY constraint failed », code 19), comme sur PostgreSQL. Sans effet sur un autre fournisseur (PostgreSQL les vérifie toujours).
+	// À appeler avant Ouvre() : une reconnexion (Ouvre() après un échec) remet le réglage, la connexion neuve l'ayant perdu.
+	PROCEDURE PUBLIQUE ExigeClesEtrangeres()
+		:bCles = Vrai
+	FIN
+
+	PROCEDURE PUBLIQUE Ouvre() : booléen
+		// Déclarés avant les SI : une déclaration dans une branche non exécutée peut corrompre des variables locales (OWL 1.6.0).
+		nProvider est un entier      = :cnx..Provider
+		req       est une sqlRequête
+		rep       est une sqlRéponse
+		bOuverte  est un booléen     = :cnx.Ouvre()
+		SI bOuverte ALORS
+			:sMessage = ""
+			SI :bCles ET nProvider = sqlSqlite ALORS
+				req..Code = "PRAGMA foreign_keys = ON"
+				rep       = SQLEnvoie(:cnx, req)
+				SI PAS rep..Succès ALORS
+					:sMessage = "PRAGMA foreign_keys = ON refusé : " + ErreurInfo()
+					bOuverte = Faux
+				FIN
+			FIN
+		SINON
+			:sMessage = ErreurInfo()
+		FIN
+		RENVOYER bOuverte
+	FIN
+	// Le fournisseur de la sqlConnexion : « sqlite », « postgresql », et « hfsql » pour tout autre connecteur.
+	PROCEDURE PUBLIQUE Fournisseur() : chaîne
+		nProvider est un entier = :cnx..Provider
+		SI nProvider = sqlSqlite ALORS
+			RENVOYER "sqlite"
+		FIN
+		SI nProvider = sqlPostgres ALORS
+			RENVOYER "postgresql"
+		FIN
+		RENVOYER "hfsql"
+	FIN
+
+	PROCEDURE PUBLIQUE Ferme()
+		:cnx.Ferme()
+	FIN
+
+	PROCEDURE PUBLIQUE Envoie(code est une chaîne, parametres est un tableau associatif) : cEbResultatSql
+		req       est une sqlRequête
+		rep       est une sqlRéponse
+		tabVide   est un tableau
+		oResultat est un cEbResultatSql = cEbResultatSql(Faux, "", tabVide, 0, 0, Faux, Faux)
+		req..Code = code
+		// Boucler sur un tableau associatif donne la VALEUR puis le NOM (mesuré, owl 1.6.0).
+		POUR TOUT valeur, nom DE parametres
+			req..Paramètres[nom] = valeur
+		FIN
+		rep = SQLEnvoie(:cnx, req)
+		SI rep..Succès ALORS
+			:sMessage = ""
+			oResultat = cEbResultatSql(Vrai, "", rep..Lignes, rep..Occurrence, rep..LignesAffectées, Faux, Faux)
+		SINON
+			:sMessage = ErreurInfo()
+			oResultat = cEbResultatSql(Faux, :sMessage, tabVide, 0, 0, Faux, Faux)
+		FIN
+		RENVOYER oResultat
+	FIN
+
+	PROCEDURE PUBLIQUE Sonde() : booléen
+		req est une sqlRequête
+		rep est une sqlRéponse
+		req..Code = :sSondage
+		rep       = SQLEnvoie(:cnx, req)
+		RENVOYER rep..Succès
+	FIN
+
+	PROCEDURE PUBLIQUE DernierMessage() : chaîne
+		RENVOYER :sMessage
+	FIN
+FIN

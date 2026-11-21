@@ -1,0 +1,621 @@
+// « ebony openapi » : écrit le document OpenAPI 3.0.3 de l'API d'un projet, à partir de ce qu'ebony sait déjà : app/domaine/<dossier>/ressource.json (champs, types, clé, NULL, règles, défauts) et les routes que « make resource » génère
+// (liste paginée, création, lecture, remplacement, modification partielle, suppression ; mêmes codes de réponse que le contrôleur généré). OpenAPI vient de ce générateur et non de « owl openapi » : OWL ne sait pas lancer un programme avec ses arguments et en lire la sortie (seule OuvreURL lance une cible, sans argument ni sortie),
+// et « owl openapi » ne décrit ni le corps des requêtes ni les réponses (OWL 1.9.0).
+// Les routes écrites À LA MAIN par l'utilisateur n'y figurent pas, ni un changement fait à la main dans un contrôleur : seul ce que dit ressource.json est décrit.
+// La licence du document est « MIT » : à changer dans le fichier si votre API en a une autre. La sécurité vient du garde que fournit un module du projet (membre « routes » de son manifeste) : s'il déclare « httpAuthBearer », le document décrit un jeton « Bearer » exigé par toutes les routes de ressource (AUTH_ROUTES=ouvertes, dans .env, les ouvre à l'exécution : le document décrit la configuration par défaut).
+// Ne connaît que le port iEbSystemeFichiers : se teste avec un faux disque. Une erreur est une exception de code 22 (manifeste illisible), 25 (aucune ressource décrite, ou description incorrecte), 30, 31 ou 53 (comme « make »).
+cEbGenerationOpenapi est une Classe
+PRIVÉ
+	oSysteme est un iEbSystemeFichiers
+
+	PROCEDURE Constructeur(systeme est un iEbSystemeFichiers)
+		:oSysteme = systeme
+	FIN
+
+	// Le chemin complet d'un chemin relatif du projet (« app/domaine/x.owl »).
+	PROCEDURE PRIVÉE Complet(lancement est une chaîne, relatif est une chaîne) : chaîne
+		RENVOYER EbJointChemin(lancement, Remplace(relatif, "/", "\"))
+	FIN
+
+	// Vrai si le garde exige un jeton « Bearer » (une propriété du garde contient httpAuthBearer).
+	PROCEDURE PRIVÉE ExigeUnJeton(oGarde est un cEbGardeRoutes) : booléen
+		POUR TOUT sLigne DE oGarde.LignesProprietes()
+			SI Position(sLigne, "httpAuthBearer") > 0 ALORS
+				RENVOYER Vrai
+			FIN
+		FIN
+		RENVOYER Faux
+	FIN
+
+	// Les ressources décrites sous app/domaine, par ordre de dossier. Lève (25) si une description est incorrecte (le message nomme le fichier et le champ).
+	PROCEDURE PRIVÉE LitRessources(lancement est une chaîne) : tableau de cEbRessourceOpenapi
+		tabRessources est un tableau de cEbRessourceOpenapi
+		sDomaine      est une chaîne                        = :Complet(lancement, "app/domaine")
+		sRelatif      est une chaîne                        = ""
+		sChemin       est une chaîne                        = ""
+		POUR TOUT sDossier DE :oSysteme.ListeDossiers(sDomaine)
+			sRelatif = "app/domaine/" + sDossier + "/ressource.json"
+			sChemin  = :Complet(lancement, sRelatif)
+			SI :oSysteme.FichierExiste(sChemin) ALORS
+				oRessource est un cEbRessourceOpenapi(:oSysteme.LitTexte(sChemin), sRelatif, sDossier)
+				TableauAjoute(tabRessources, oRessource)
+			FIN
+		FIN
+		RENVOYER tabRessources
+	FIN
+
+	// Le titre de l'API : le nom du projet noté dans ebony.conf, ou « API » s'il n'y est pas lisible.
+	PROCEDURE PRIVÉE TitreApi(sTexteConf est une chaîne) : chaîne
+		sTitre  est une chaîne = "API"
+		jConf   est un JSON
+		jProjet est un JSON
+		QUAND EXCEPTION DANS
+			jConf   = ChaîneVersJSON(sTexteConf)
+			jProjet = jConf["projet"]
+			SI JSONExiste(jProjet, "Nom") ALORS
+				SI TypeVar(jProjet["Nom"]) = owlChaîne ALORS
+					sTitre = jProjet["Nom"]
+				FIN
+			FIN
+		FAIRE
+			sTitre = "API"
+		FIN
+		SI SansEspace(sTitre) = "" ALORS
+			sTitre = "API"
+		FIN
+		RENVOYER sTitre
+	FIN
+
+	// ---- Écriture du document ----
+
+	// Une valeur JSON lue dans la description (un défaut, un élément de « valeurs ») posée dans le document avec son type : texte, entier, réel, booléen. Un autre type est ignoré.
+	PROCEDURE PRIVÉE EcritValeur(oE est un cEbEcritureJson, sCle est une chaîne, vValeur est un JSON)
+		nType   est un entier  = TypeVar(vValeur)
+		sTexte  est une chaîne = ""
+		bValeur est un booléen = Faux
+		SI nType = owlChaîne ALORS
+			sTexte = vValeur
+			oE.EcritTexte(sCle, sTexte)
+		FIN
+		SI nType = owlEntier OU nType = owlRéel ALORS
+			sTexte = "" + vValeur
+			SI EbNombreOpenapi(sTexte) ALORS
+				oE.EcritBrut(sCle, sTexte)
+			FIN
+		FIN
+		SI nType = owlBooléen ALORS
+			bValeur = vValeur
+			oE.EcritBooleen(sCle, bValeur)
+		FIN
+	FIN
+
+	// Les règles d'un champ (« regles » : longueurMin, longueurMax, valeurs, motif, min, max) en mots OpenAPI (minLength, maxLength, enum, pattern, minimum, maximum). Une règle qui ne s'exprime pas pour ce type, ou dont la valeur n'est pas du bon type, est omise.
+	PROCEDURE PRIVÉE EcritRegles(oE est un cEbEcritureJson, sType est une chaîne, jChamp est un JSON)
+		SI PAS JSONExiste(jChamp, "regles") ALORS
+			RENVOYER
+		FIN
+		jRegles est un JSON    = jChamp["regles"]
+		sMot    est une chaîne = ""
+		nType   est un entier  = 0
+		POUR TOUT vValeur, sRegle DE jRegles
+			sMot  = EbMotOpenapi(sType, sRegle)
+			nType = TypeVar(vValeur)
+			SI sMot = "enum" ALORS
+				SI Gauche(JSONVersChaîne(vValeur, psdMinifie), 1) = "[" ALORS
+					oE.OuvreTableau("enum")
+					POUR TOUT vElement DE vValeur
+						:EcritValeur(oE, "", vElement)
+					FIN
+					oE.FermeTableau()
+				FIN
+			SINON
+				SI sMot = "pattern" ET nType = owlChaîne ALORS
+					:EcritValeur(oE, sMot, vValeur)
+				FIN
+				SI (sMot = "minLength" OU sMot = "maxLength") ET nType = owlEntier ALORS
+					:EcritValeur(oE, sMot, vValeur)
+				FIN
+				SI (sMot = "minimum" OU sMot = "maximum") ET (nType = owlEntier OU nType = owlRéel) ALORS
+					:EcritValeur(oE, sMot, vValeur)
+				FIN
+			FIN
+		FIN
+	FIN
+
+	// Le schéma d'un champ (une propriété d'un objet) : type, format, NULL permis, clé générée en lecture seule, référence, défaut et règles.
+	PROCEDURE PRIVÉE EcritChamp(oE est un cEbEcritureJson, oChamp est un cEbChampTable, jChamp est un JSON)
+		sType    est une chaîne = oChamp.TypeChamp()
+		sFormat  est une chaîne = EbFormatOpenapi(sType)
+		bGeneree est un booléen = oChamp.Cle() ET sType = "entier"
+		oE.OuvreObjet(oChamp.Slug())
+		oE.EcritTexte("type", EbTypeOpenapi(sType))
+		SI sFormat <> "" ALORS
+			oE.EcritTexte("format", sFormat)
+		FIN
+		SI oChamp.Nullable() ALORS
+			oE.EcritBooleen("nullable", Vrai)
+		FIN
+		SI bGeneree ALORS
+			oE.EcritBooleen("readOnly", Vrai)
+		FIN
+		SI oChamp.ARef() ALORS
+			oE.EcritTexte("description", "Référence : " + oChamp.RefTable() + "." + oChamp.RefColonne() + ".")
+		FIN
+		SI JSONExiste(jChamp, "defaut") ET PAS bGeneree ALORS
+			vDefaut est un JSON = jChamp["defaut"]
+			:EcritValeur(oE, "default", vDefaut)
+		FIN
+		:EcritRegles(oE, sType, jChamp)
+		oE.FermeObjet()
+	FIN
+
+	// Les noms JSON (le slug : « user_id » pour « userId ») des champs obligatoires à l'envoi : non NULL, sans défaut, sauf la clé générée. nMode : 1 = lecture (tous les champs non NULL), 2 = écriture (POST, PUT).
+	PROCEDURE PRIVÉE Obligatoires(oRessource est un cEbRessourceOpenapi, nMode est un entier) : tableau de chaînes
+		tabNoms      est un tableau de chaînes
+		jChamps      est un JSON               = oRessource.Description()["champs"]
+		nPos         est un entier             = 0
+		bObligatoire est un booléen            = Faux
+		POUR TOUT jChamp DE jChamps
+			nPos++
+			oChamp est un cEbChampTable = oRessource.Champs()[nPos]
+			bObligatoire = PAS oChamp.Nullable()
+			SI nMode = 2 ALORS
+				SI oChamp.Cle() ET oChamp.TypeChamp() = "entier" ALORS
+					bObligatoire = Faux
+				FIN
+				SI JSONExiste(jChamp, "defaut") ALORS
+					bObligatoire = Faux
+				FIN
+			FIN
+			SI bObligatoire ALORS
+				TableauAjoute(tabNoms, oChamp.Slug())
+			FIN
+		FIN
+		RENVOYER tabNoms
+	FIN
+
+	// Un schéma d'objet de la ressource. nMode : 1 = la ressource en lecture (tous les champs ; obligatoires = non NULL), 2 = le corps d'un POST ou d'un PUT (sans la clé générée ; obligatoires = non NULL et sans défaut),
+	// 3 = le corps d'un PATCH (mêmes champs, aucun obligatoire).
+	PROCEDURE PRIVÉE EcritSchemaRessource(oE est un cEbEcritureJson, sCle est une chaîne, oRessource est un cEbRessourceOpenapi, nMode est un entier)
+		jChamps est un JSON    = oRessource.Description()["champs"]
+		nPos    est un entier  = 0
+		bEcrit  est un booléen = Faux
+		oE.OuvreObjet(sCle)
+		oE.EcritTexte("type", "object")
+		SI nMode <> 3 ALORS
+			tabRequis est un tableau de chaînes = :Obligatoires(oRessource, nMode)
+			SI tabRequis..Occurrence > 0 ALORS
+				oE.OuvreTableau("required")
+				POUR TOUT sNom DE tabRequis
+					oE.EcritTexte("", sNom)
+				FIN
+				oE.FermeTableau()
+			FIN
+		FIN
+		oE.OuvreObjet("properties")
+		POUR TOUT jChamp DE jChamps
+			nPos++
+			oChamp est un cEbChampTable = oRessource.Champs()[nPos]
+			bEcrit = Vrai
+			SI nMode > 1 ET oChamp.Cle() ET oChamp.TypeChamp() = "entier" ALORS
+				bEcrit = Faux
+			FIN
+			SI bEcrit ALORS
+				:EcritChamp(oE, oChamp, jChamp)
+			FIN
+		FIN
+		oE.FermeObjet()
+		oE.FermeObjet()
+	FIN
+
+	// Une référence vers un schéma des composants : { "$ref": "#/components/schemas/<nom>" }.
+	PROCEDURE PRIVÉE EcritRefSchema(oE est un cEbEcritureJson, sCle est une chaîne, sNom est une chaîne)
+		oE.OuvreObjet(sCle)
+		oE.EcritTexte("$ref", "#/components/schemas/" + sNom)
+		oE.FermeObjet()
+	FIN
+
+	// La réponse d'erreur qu'un code HTTP désigne dans les composants (400, 401, 404, 409, 422, 503, 500).
+	PROCEDURE PRIVÉE NomReponseErreur(sCode est une chaîne) : chaîne
+		SELON sCode
+			CAS "400"
+			RENVOYER "RequeteInvalide"
+			CAS "422"
+			RENVOYER "DonneesInvalides"
+			CAS "401"
+			RENVOYER "NonAutorise"
+			CAS "404"
+			RENVOYER "Introuvable"
+			CAS "409"
+			RENVOYER "Conflit"
+			CAS "503"
+			RENVOYER "BaseIndisponible"
+			AUTRE CAS
+			RENVOYER "ErreurInterne"
+		FIN
+	FIN
+
+	// Les réponses d'erreur d'une opération (les codes de sCodes, séparés par des virgules), précédées de 401 si les routes exigent un jeton.
+	PROCEDURE PRIVÉE EcritErreurs(oE est un cEbEcritureJson, sCodes est une chaîne, bJeton est un booléen)
+		tabCodes est un tableau de chaînes = ChaîneDécoupe(sCodes, ",")
+		SI bJeton ALORS
+			oE.OuvreObjet("401")
+			oE.EcritTexte("$ref", "#/components/responses/NonAutorise")
+			oE.FermeObjet()
+		FIN
+		POUR TOUT sCode DE tabCodes
+			oE.OuvreObjet(sCode)
+			oE.EcritTexte("$ref", "#/components/responses/" + :NomReponseErreur(sCode))
+			oE.FermeObjet()
+		FIN
+	FIN
+
+	// Les champs d'une ressource en réponse « 200 » ou « 201 » : le schéma de la ressource.
+	PROCEDURE PRIVÉE EcritReponseRessource(oE est un cEbEcritureJson, sCode est une chaîne, sDescription est une chaîne, sNom est une chaîne)
+		oE.OuvreObjet(sCode)
+		oE.EcritTexte("description", sDescription)
+		oE.OuvreObjet("content")
+		oE.OuvreObjet("application/json")
+		:EcritRefSchema(oE, "schema", sNom)
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+	FIN
+
+	// Le corps d'une requête : la ressource sous sNomSchema, obligatoire.
+	PROCEDURE PRIVÉE EcritCorps(oE est un cEbEcritureJson, sNomSchema est une chaîne)
+		oE.OuvreObjet("requestBody")
+		oE.EcritBooleen("required", Vrai)
+		oE.OuvreObjet("content")
+		oE.OuvreObjet("application/json")
+		:EcritRefSchema(oE, "schema", sNomSchema)
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+	FIN
+
+	// Le début d'une opération : son identifiant, son résumé et son étiquette (le nom de la ressource). À fermer avec FermeObjet().
+	PROCEDURE PRIVÉE OuvreOperation(oE est un cEbEcritureJson, sMethode est une chaîne, sIdentifiant est une chaîne, sResume est une chaîne, sEtiquette est une chaîne)
+		oE.OuvreObjet(sMethode)
+		oE.EcritTexte("operationId", sIdentifiant)
+		oE.EcritTexte("summary", sResume)
+		oE.OuvreTableau("tags")
+		oE.EcritTexte("", sEtiquette)
+		oE.FermeTableau()
+	FIN
+
+	// Un paramètre de requête facultatif sans borne ni valeurs permises (un filtre d'égalité) : nom, description, type et format. page, limite, tri et ordre, qui en ont, sont écrits à la main par EcritParametresListe.
+	PROCEDURE PRIVÉE EcritParametre(oE est un cEbEcritureJson, sNom est une chaîne, sDescription est une chaîne, sType est une chaîne, sFormat est une chaîne)
+		oE.OuvreObjet("")
+		oE.EcritTexte("name", sNom)
+		oE.EcritTexte("in", "query")
+		oE.EcritBooleen("required", Faux)
+		oE.EcritTexte("description", sDescription)
+		oE.OuvreObjet("schema")
+		oE.EcritTexte("type", sType)
+		SI sFormat <> "" ALORS
+			oE.EcritTexte("format", sFormat)
+		FIN
+		oE.FermeObjet()
+		oE.FermeObjet()
+	FIN
+
+	// Les paramètres de la liste générée : page, limite (20 par défaut, 100 au plus), tri (une colonne), ordre, et un filtre d'égalité exacte par colonne (filtre_<colonne>).
+	PROCEDURE PRIVÉE EcritParametresListe(oE est un cEbEcritureJson, oRessource est un cEbRessourceOpenapi)
+		oE.OuvreTableau("parameters")
+		oE.OuvreObjet("")
+		oE.EcritTexte("name", "page")
+		oE.EcritTexte("in", "query")
+		oE.EcritBooleen("required", Faux)
+		oE.EcritTexte("description", "Numéro de la page, à partir de 1.")
+		oE.OuvreObjet("schema")
+		oE.EcritTexte("type", "integer")
+		oE.EcritBrut("minimum", "1")
+		oE.EcritBrut("default", "1")
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.OuvreObjet("")
+		oE.EcritTexte("name", "limite")
+		oE.EcritTexte("in", "query")
+		oE.EcritBooleen("required", Faux)
+		oE.EcritTexte("description", "Nombre de lignes par page.")
+		oE.OuvreObjet("schema")
+		oE.EcritTexte("type", "integer")
+		oE.EcritBrut("minimum", "1")
+		oE.EcritBrut("maximum", "100")
+		oE.EcritBrut("default", "20")
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.OuvreObjet("")
+		oE.EcritTexte("name", "tri")
+		oE.EcritTexte("in", "query")
+		oE.EcritBooleen("required", Faux)
+		oE.EcritTexte("description", "Colonne du tri (complété par la clé, croissante).")
+		oE.OuvreObjet("schema")
+		oE.EcritTexte("type", "string")
+		oE.OuvreTableau("enum")
+		POUR TOUT oChamp DE oRessource.Champs()
+			oE.EcritTexte("", oChamp.Slug())
+		FIN
+		oE.FermeTableau()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.OuvreObjet("")
+		oE.EcritTexte("name", "ordre")
+		oE.EcritTexte("in", "query")
+		oE.EcritBooleen("required", Faux)
+		oE.EcritTexte("description", "Sens du tri.")
+		oE.OuvreObjet("schema")
+		oE.EcritTexte("type", "string")
+		oE.OuvreTableau("enum")
+		oE.EcritTexte("", "asc")
+		oE.EcritTexte("", "desc")
+		oE.FermeTableau()
+		oE.EcritTexte("default", "asc")
+		oE.FermeObjet()
+		oE.FermeObjet()
+		POUR TOUT oChamp DE oRessource.Champs()
+			:EcritParametre(oE, "filtre_" + oChamp.Slug(), "Égalité exacte sur « " + oChamp.Slug() + " » (tous les filtres donnés sont exigés).", EbTypeOpenapi(oChamp.TypeChamp()), EbFormatOpenapi(oChamp.TypeChamp()))
+		FIN
+		oE.FermeTableau()
+	FIN
+
+	// Les deux chemins d'une ressource : la collection (GET liste, POST) et l'élément (GET, PUT, PATCH, DELETE), avec les codes de réponse du contrôleur généré.
+	PROCEDURE PRIVÉE EcritChemins(oE est un cEbEcritureJson, oRessource est un cEbRessourceOpenapi, bJeton est un booléen)
+		sNom est une chaîne = oRessource.Nom()
+		oE.OuvreObjet("/api/" + oRessource.Segment())
+		:OuvreOperation(oE, "get", "Liste" + sNom, "Liste paginée de " + sNom, sNom)
+		:EcritParametresListe(oE, oRessource)
+		oE.OuvreObjet("responses")
+		oE.OuvreObjet("200")
+		oE.EcritTexte("description", "Une page de " + sNom + ", avec le total.")
+		oE.OuvreObjet("content")
+		oE.OuvreObjet("application/json")
+		oE.OuvreObjet("schema")
+		oE.EcritTexte("type", "object")
+		oE.OuvreTableau("required")
+		oE.EcritTexte("", "donnees")
+		oE.EcritTexte("", "meta")
+		oE.FermeTableau()
+		oE.OuvreObjet("properties")
+		oE.OuvreObjet("donnees")
+		oE.EcritTexte("type", "array")
+		:EcritRefSchema(oE, "items", sNom)
+		oE.FermeObjet()
+		:EcritRefSchema(oE, "meta", "PageMeta")
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		:EcritErreurs(oE, "400,503,500", bJeton)
+		oE.FermeObjet()
+		oE.FermeObjet()
+		:OuvreOperation(oE, "post", "Cree" + sNom, "Crée une ligne de " + sNom, sNom)
+		:EcritCorps(oE, sNom + "Corps")
+		oE.OuvreObjet("responses")
+		:EcritReponseRessource(oE, "201", "La ligne créée, avec sa clé.", sNom)
+		:EcritErreurs(oE, "400,409,422,503,500", bJeton)
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.OuvreObjet("/api/" + oRessource.Segment() + "/{cle}")
+		oE.OuvreTableau("parameters")
+		oE.OuvreObjet("")
+		oE.EcritTexte("name", "cle")
+		oE.EcritTexte("in", "path")
+		oE.EcritBooleen("required", Vrai)
+		oE.EcritTexte("description", "La clé de la ligne (colonne « " + oRessource.ColonneCle() + " »).")
+		oE.OuvreObjet("schema")
+		oE.EcritTexte("type", EbTypeOpenapi(oRessource.TypeCle()))
+		SI EbFormatOpenapi(oRessource.TypeCle()) <> "" ALORS
+			oE.EcritTexte("format", EbFormatOpenapi(oRessource.TypeCle()))
+		FIN
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeTableau()
+		:OuvreOperation(oE, "get", "Lit" + sNom, "Lit une ligne de " + sNom, sNom)
+		oE.OuvreObjet("responses")
+		:EcritReponseRessource(oE, "200", "La ligne demandée.", sNom)
+		:EcritErreurs(oE, "404,503,500", bJeton)
+		oE.FermeObjet()
+		oE.FermeObjet()
+		:OuvreOperation(oE, "put", "Modifie" + sNom, "Remplace une ligne de " + sNom + " : tous les champs obligatoires sont exigés", sNom)
+		:EcritCorps(oE, sNom + "Corps")
+		oE.OuvreObjet("responses")
+		:EcritReponseRessource(oE, "200", "La ligne remplacée.", sNom)
+		:EcritErreurs(oE, "400,404,409,422,503,500", bJeton)
+		oE.FermeObjet()
+		oE.FermeObjet()
+		:OuvreOperation(oE, "patch", "Corrige" + sNom, "Modifie certains champs d'une ligne de " + sNom, sNom)
+		:EcritCorps(oE, sNom + "Partiel")
+		oE.OuvreObjet("responses")
+		:EcritReponseRessource(oE, "200", "La ligne modifiée.", sNom)
+		:EcritErreurs(oE, "400,404,409,422,503,500", bJeton)
+		oE.FermeObjet()
+		oE.FermeObjet()
+		:OuvreOperation(oE, "delete", "Supprime" + sNom, "Supprime une ligne de " + sNom, sNom)
+		oE.OuvreObjet("responses")
+		oE.OuvreObjet("204")
+		oE.EcritTexte("description", "La ligne est supprimée.")
+		oE.FermeObjet()
+		:EcritErreurs(oE, "404,409,503,500", bJeton)
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+	FIN
+
+	// La route de santé que tout service généré porte : GET /api/health, sans jeton.
+	PROCEDURE PRIVÉE EcritSante(oE est un cEbEcritureJson)
+		oE.OuvreObjet("/api/health")
+		oE.OuvreObjet("get")
+		oE.EcritTexte("operationId", "LitSante")
+		oE.EcritTexte("summary", "État du service et de la base de données")
+		oE.OuvreTableau("tags")
+		oE.EcritTexte("", "Santé")
+		oE.FermeTableau()
+		oE.OuvreTableau("security")
+		oE.FermeTableau()
+		oE.OuvreObjet("responses")
+		oE.OuvreObjet("200")
+		oE.EcritTexte("description", "Le service répond.")
+		oE.OuvreObjet("content")
+		oE.OuvreObjet("application/json")
+		oE.OuvreObjet("schema")
+		oE.EcritTexte("type", "object")
+		oE.OuvreObjet("properties")
+		oE.OuvreObjet("statut")
+		oE.EcritTexte("type", "string")
+		oE.FermeObjet()
+		oE.OuvreObjet("base")
+		oE.EcritTexte("type", "string")
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+	FIN
+
+	// Une réponse d'erreur réutilisable : { "code": ..., "message": ... } (le format d'EbErreurHttp).
+	PROCEDURE PRIVÉE EcritComposantErreur(oE est un cEbEcritureJson, sNom est une chaîne, sDescription est une chaîne)
+		oE.OuvreObjet(sNom)
+		oE.EcritTexte("description", sDescription)
+		oE.OuvreObjet("content")
+		oE.OuvreObjet("application/json")
+		:EcritRefSchema(oE, "schema", "Erreur")
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+	FIN
+
+	// Les composants : les réponses d'erreur, le schéma de sécurité (si les routes exigent un jeton), puis les schémas (Erreur, PageMeta, et trois par ressource).
+	PROCEDURE PRIVÉE EcritComposants(oE est un cEbEcritureJson, tabRessources est un tableau de cEbRessourceOpenapi, bJeton est un booléen)
+		oE.OuvreObjet("components")
+		oE.OuvreObjet("responses")
+		:EcritComposantErreur(oE, "RequeteInvalide", "Requête mal formée : un paramètre de l'adresse incorrect, ou un corps qui n'est pas du JSON.")
+		:EcritComposantErreur(oE, "DonneesInvalides", "Données invalides : un champ obligatoire absent, ou une valeur qui viole une règle de ressource.json (un seul message qui nomme tout).")
+		SI bJeton ALORS
+			:EcritComposantErreur(oE, "NonAutorise", "Jeton d'accès absent ou invalide.")
+		FIN
+		:EcritComposantErreur(oE, "Introuvable", "La ligne demandée n'existe pas.")
+		:EcritComposantErreur(oE, "Conflit", "Conflit avec l'état des données : clé déjà prise, ou ligne liée à une autre table.")
+		:EcritComposantErreur(oE, "BaseIndisponible", "La base de données est indisponible.")
+		:EcritComposantErreur(oE, "ErreurInterne", "Erreur interne (le détail est dans le journal du service, jamais dans la réponse).")
+		oE.FermeObjet()
+		SI bJeton ALORS
+			oE.OuvreObjet("securitySchemes")
+			oE.OuvreObjet("bearerAuth")
+			oE.EcritTexte("type", "http")
+			oE.EcritTexte("scheme", "bearer")
+			oE.EcritTexte("description", "Jeton d'accès opaque : « ebony token create <nom> », puis l'en-tête Authorization: Bearer <jeton>.")
+			oE.FermeObjet()
+			oE.FermeObjet()
+		FIN
+		oE.OuvreObjet("schemas")
+		oE.OuvreObjet("Erreur")
+		oE.EcritTexte("type", "object")
+		oE.OuvreTableau("required")
+		oE.EcritTexte("", "code")
+		oE.EcritTexte("", "message")
+		oE.FermeTableau()
+		oE.OuvreObjet("properties")
+		oE.OuvreObjet("code")
+		oE.EcritTexte("type", "string")
+		oE.OuvreTableau("enum")
+		oE.EcritTexte("", "invalide")
+		oE.EcritTexte("", "non_autorise")
+		oE.EcritTexte("", "introuvable")
+		oE.EcritTexte("", "conflit")
+		oE.EcritTexte("", "base_indisponible")
+		oE.EcritTexte("", "erreur_interne")
+		oE.FermeTableau()
+		oE.FermeObjet()
+		oE.OuvreObjet("message")
+		oE.EcritTexte("type", "string")
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.OuvreObjet("PageMeta")
+		oE.EcritTexte("type", "object")
+		oE.OuvreTableau("required")
+		oE.EcritTexte("", "total")
+		oE.EcritTexte("", "page")
+		oE.EcritTexte("", "limite")
+		oE.EcritTexte("", "pages")
+		oE.FermeTableau()
+		oE.OuvreObjet("properties")
+		POUR TOUT sMeta DE ChaîneDécoupe("total,page,limite,pages", ",")
+			oE.OuvreObjet(sMeta)
+			oE.EcritTexte("type", "integer")
+			oE.FermeObjet()
+		FIN
+		oE.FermeObjet()
+		oE.FermeObjet()
+		POUR TOUT oRessource DE tabRessources
+			:EcritSchemaRessource(oE, oRessource.Nom(), oRessource, 1)
+			:EcritSchemaRessource(oE, oRessource.Nom() + "Corps", oRessource, 2)
+			:EcritSchemaRessource(oE, oRessource.Nom() + "Partiel", oRessource, 3)
+		FIN
+		oE.FermeObjet()
+		oE.FermeObjet()
+	FIN
+
+	// Le document OpenAPI du projet du dossier de lancement, en JSON indenté. Lève 30 (owl n'est pas dans le dossier de lancement), 31 (pas un projet ebony), 53 (le projet n'a pas le module burin), 22 (manifeste illisible),
+	// 25 (une description est incorrecte, ou aucune ressource n'est décrite).
+	PROCEDURE PUBLIQUE Execute() : chaîne
+		sLancement est une chaîne = :oSysteme.DossierDeLancement()
+		SI PAS EbMemeChemin(sLancement, :oSysteme.DossierActif()) ALORS
+			ExceptionDéclenche(30, "owl ne travaille pas dans " + sLancement + " : le document serait écrit pour le mauvais projet. Lancez « ebony doctor » pour voir pourquoi.")
+		FIN
+		sConf est une chaîne = EbJointChemin(sLancement, "ebony.conf")
+		SI PAS :oSysteme.FichierExiste(sConf) ALORS
+			ExceptionDéclenche(31, "Ce dossier n'est pas un projet ebony : ebony.conf est introuvable dans " + sLancement + ". Placez-vous dans le dossier d'un projet, ou créez-en un avec « ebony new <nom> ».")
+		FIN
+		sTexteConf est une chaîne = :oSysteme.LitTexte(sConf)
+		EbExigeModuleDuProjet(sTexteConf, "burin", "ebony openapi")
+		tabRessources est un tableau de cEbRessourceOpenapi = :LitRessources(sLancement)
+		SI tabRessources..Occurrence = 0 ALORS
+			ExceptionDéclenche(25, "Aucune ressource décrite (app/domaine/*/ressource.json) : lancez d'abord « ebony make resource <Nom> --champs … », qui écrit la description d'une ressource.")
+		FIN
+		bJeton est un booléen         = :ExigeUnJeton(EbGardeRoutesDuProjet(:oSysteme, sLancement))
+		oE     est un cEbEcritureJson
+		oE.OuvreObjet("")
+		oE.EcritTexte("openapi", "3.0.3")
+		oE.OuvreObjet("info")
+		oE.EcritTexte("title", :TitreApi(sTexteConf))
+		oE.EcritTexte("version", "1.0.0")
+		oE.EcritTexte("description", "Document écrit par « ebony openapi » d'après app/domaine/*/ressource.json : les routes écrites à la main n'y figurent pas.")
+		oE.OuvreObjet("license")
+		oE.EcritTexte("name", "MIT")
+		oE.EcritTexte("url", "https://opensource.org/licenses/MIT")
+		oE.FermeObjet()
+		oE.FermeObjet()
+		oE.OuvreTableau("servers")
+		oE.OuvreObjet("")
+		oE.EcritTexte("url", "http://127.0.0.1:8080")
+		oE.EcritTexte("description", "owl serve, adresse par défaut")
+		oE.FermeObjet()
+		oE.FermeTableau()
+		SI bJeton ALORS
+			oE.OuvreTableau("security")
+			oE.OuvreObjet("")
+			oE.OuvreTableau("bearerAuth")
+			oE.FermeTableau()
+			oE.FermeObjet()
+			oE.FermeTableau()
+		FIN
+		oE.OuvreObjet("paths")
+		:EcritSante(oE)
+		POUR TOUT oRessource DE tabRessources
+			:EcritChemins(oE, oRessource, bJeton)
+		FIN
+		oE.FermeObjet()
+		:EcritComposants(oE, tabRessources, bJeton)
+		oE.FermeObjet()
+		RENVOYER oE.Document()
+	FIN
+FIN

@@ -1,0 +1,91 @@
+// Tests de EbLectureFournisseurs : le membre « fournisseurs » du manifeste d'un module (valeurs permises de --base, défaut, fournisseurs qui savent appliquer des migrations), lu comme des DONNÉES.
+// Aucun disque : le texte du manifeste est passé en argument. Une entrée invalide est une exception de code 22 qui la nomme.
+
+// Lance la lecture et rend « code|message » si elle lève, ou « » si elle réussit.
+PROCEDURE EbTestRefusFournisseurs(sTexte est une chaîne) : chaîne
+	sRes est une chaîne = ""
+	QUAND EXCEPTION DANS
+		oLu est un cEbFournisseursModule = EbFournisseursDuManifeste(sTexte, "essai.json")
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Les valeurs, le défaut et les capacités sont lus tels que le manifeste les donne, dans l'ordre. Le cœur ne connaît aucun de ces noms : ils viennent du texte.
+PROCEDURE scenario_lit_valeurs_defaut_et_capacites()
+	oLu est un cEbFournisseursModule = EbFournisseursDuManifeste(`{ "fournisseurs": { "valeurs": ["alpha", "beta", "gamma"], "defaut": "beta", "capacites": [ { "nom": "deplacer", "fournisseurs": ["alpha", "beta"] }, { "nom": "voler", "fournisseurs": ["gamma"] } ] } }`, "essai.json")
+	dbgVérifieVrai(oLu.Propose(), "le module propose des fournisseurs")
+	dbgVérifieEgalité(oLu.Valeurs()..Occurrence, 3, "trois valeurs")
+	dbgVérifieEgalité(oLu.ValeursEnListe(), "alpha|beta|gamma", "la liste pour EbVerifieValeurOption")
+	dbgVérifieEgalité(oLu.Defaut(), "beta", "le défaut")
+	dbgVérifieVrai(oLu.Offre("deplacer", "alpha"), "alpha offre deplacer")
+	dbgVérifieVrai(oLu.Offre("deplacer", "beta"), "beta offre deplacer")
+	dbgVérifieFaux(oLu.Offre("deplacer", "gamma"), "gamma n'offre pas deplacer")
+	dbgVérifieVrai(oLu.Offre("voler", "gamma"), "gamma offre voler : chaque capacité a sa liste")
+	dbgVérifieFaux(oLu.Offre("voler", "alpha"), "alpha n'offre pas voler")
+	dbgVérifieVrai(oLu.Offre("deplacer", "ALPHA"), "la casse du fournisseur ne compte pas")
+	dbgVérifieFaux(oLu.Offre("inconnue", "alpha"), "une capacité que personne ne déclare n'est offerte par personne")
+	dbgVérifieFaux(oLu.Offre("deplacer", "inconnu"), "un fournisseur inconnu n'offre rien")
+	dbgVérifieFaux(oLu.Offre("deplacer", ""), "pas de fournisseur : aucune capacité")
+FIN
+
+// Sans « capacites » : aucun fournisseur n'offre aucune capacité (rien n'est supposé).
+PROCEDURE scenario_sans_capacites_aucune_offerte()
+	oLu est un cEbFournisseursModule = EbFournisseursDuManifeste(`{ "fournisseurs": { "valeurs": ["alpha", "beta"], "defaut": "alpha" } }`, "essai.json")
+	dbgVérifieFaux(oLu.Offre("deplacer", "alpha"), "alpha n'offre rien")
+	dbgVérifieFaux(oLu.Offre("deplacer", "beta"), "beta non plus")
+FIN
+// Un manifeste sans « fournisseurs » (ou illisible comme objet vide) n'offre aucun fournisseur, sans erreur.
+PROCEDURE scenario_sans_fournisseurs_aucune_offre()
+	oAucun est un cEbFournisseursModule = EbFournisseursDuManifeste(`{ "nom": "essai" }`, "essai.json")
+	dbgVérifieFaux(oAucun.Propose(), "rien à choisir")
+	dbgVérifieEgalité(oAucun.ValeursEnListe(), "", "liste vide")
+	dbgVérifieEgalité(oAucun.Defaut(), "", "pas de défaut")
+	dbgVérifieFaux(oAucun.Offre("deplacer", "alpha"), "aucune capacité")
+FIN
+
+// Un texte qui n'est pas du JSON est refusé (22), le chemin du manifeste est dans le message.
+PROCEDURE scenario_json_invalide_refuse()
+	sRes est une chaîne = EbTestRefusFournisseurs("pas du json {")
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "code 22")
+	dbgVérifieVrai(Position(sRes, "essai.json") > 0, "le manifeste est nommé")
+FIN
+
+// Chaque défaut est refusé (22) en nommant l'entrée : pas un objet, valeurs absentes ou vides ou mal écrites ou en double, défaut absent ou hors liste, capacités mal formées.
+PROCEDURE scenario_entrees_invalides_refusees()
+	sRes est une chaîne = EbTestRefusFournisseurs(`{ "fournisseurs": ["alpha"] }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "une liste au lieu d'un objet : code 22")
+	dbgVérifieVrai(Position(sRes, "fournisseurs") > 0, "l'entrée est nommée : " + sRes)
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "defaut": "alpha" } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "valeurs absentes")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": [], "defaut": "alpha" } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "valeurs vides")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": "alpha", "defaut": "alpha" } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "valeurs : un texte et non une liste")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": [7], "defaut": "alpha" } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "une valeur qui n'est pas un texte")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": ["Alpha"], "defaut": "Alpha" } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "un nom en majuscules : refusé, c'est un nom de fichier et de message")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": ["alpha", "alpha"], "defaut": "alpha" } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "une valeur en double")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": ["alpha"] } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "défaut absent")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": ["alpha"], "defaut": "beta" } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "défaut hors des valeurs")
+	dbgVérifieVrai(Position(sRes, "beta") > 0, "le défaut fautif est cité : " + sRes)
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": ["alpha"], "defaut": "alpha", "capacites": [ { "nom": "x", "fournisseurs": ["beta"] } ] } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "une capacité cite un fournisseur absent des valeurs")
+	dbgVérifieVrai(Position(sRes, "beta") > 0, "le fournisseur fautif est cité : " + sRes)
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": ["alpha"], "defaut": "alpha", "capacites": "x" } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "capacites : un texte et non une liste")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": ["alpha"], "defaut": "alpha", "capacites": [ "x" ] } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "une capacité n'est pas un objet")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": ["alpha"], "defaut": "alpha", "capacites": [ { "fournisseurs": ["alpha"] } ] } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "une capacité sans nom")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": ["alpha"], "defaut": "alpha", "capacites": [ { "nom": "Gros Mot", "fournisseurs": ["alpha"] } ] } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "un nom de capacité invalide")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": ["alpha"], "defaut": "alpha", "capacites": [ { "nom": "x" } ] } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "une capacité sans fournisseurs")
+	sRes = EbTestRefusFournisseurs(`{ "fournisseurs": { "valeurs": ["alpha"], "defaut": "alpha", "capacites": [ { "nom": "x", "fournisseurs": ["alpha"] }, { "nom": "x", "fournisseurs": ["alpha"] } ] } }`)
+	dbgVérifieEgalité(Gauche(sRes, 3), "22|", "une capacité écrite deux fois")FIN

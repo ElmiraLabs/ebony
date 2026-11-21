@@ -1,0 +1,60 @@
+// Le générateur de valeurs que le manifeste d'un module du projet propose aux seeders (membre « generateur » de ebony/modules/<module>.json) : « make seeder » l'écrit dans le lanceur au lieu du compteur.
+// C'est le même mécanisme que le garde des routes (membre « routes » d'un manifeste) : l'outillage de Burin lit des DONNÉES de ce que les modules du projet déclarent et ne connaît le nom d'aucun d'eux.
+//   "generateur": { "classe": "cEbGenerateurFigurant", "graine": 42 }       donne    cEbGenerateurFigurant(42)       ("graine" est facultative : sans elle, cEbGenerateurFigurant())
+// Le nom de la classe finira dans du code généré : lettres ASCII, chiffres et soulignés seulement, commençant par une lettre ; la graine est un entier. Sinon, exception 22 (manifeste incorrect : réinstallez ebony ou restaurez ebony/).
+// La classe doit implémenter iEbGenerateur (le port des fabriques, déclaré par Burin) et se construire avec la graine, ou sans argument si le manifeste n'en donne pas.
+EbGenerateurDuManifeste est une CollectionDeProcédures
+
+	// Le générateur d'un projet sans module qui en propose un : le compteur de Burin, déterministe, qui écrit « <colonne> <n> ».
+	PROCEDURE EbGenerateurParDefaut() : chaîne
+		RENVOYER "cEbGenerateurCompteur()"
+	FIN
+
+	// Vrai si le texte peut être un nom de classe OWL écrit dans le code généré : une lettre ASCII puis des lettres ASCII, des chiffres ou des soulignés.
+	PROCEDURE EbNomDeClasseAscii(sNom est une chaîne) : booléen
+		sLettres  est une chaîne = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+		sChiffres est une chaîne = "0123456789_"
+		SI sNom = "" ALORS
+			RENVOYER Faux
+		FIN
+		SI Position(sLettres, Gauche(sNom, 1)) = 0 ALORS
+			RENVOYER Faux
+		FIN
+		POUR i = 2 À Taille(sNom)
+			sCar est une chaîne = Milieu(sNom, i, 1)
+			SI Position(sLettres, sCar) = 0 ET Position(sChiffres, sCar) = 0 ALORS
+				RENVOYER Faux
+			FIN
+		FIN
+		RENVOYER Vrai
+	FIN
+
+	// L'expression du générateur que déclare le texte d'un manifeste (« cEbGenerateurFigurant(42) »), ou « » s'il n'a pas de membre « generateur ». sChemin ne sert qu'aux messages. Lève (22) si le membre est incorrect.
+	PROCEDURE EbGenerateurDuManifeste(sTexte est une chaîne, sChemin est une chaîne) : chaîne
+		j  est un JSON
+		jg est un JSON
+		SI PAS JSONValide(sTexte) ALORS
+			ExceptionDéclenche(22, "Le manifeste " + sChemin + " n'est pas du JSON valide. Restaurez la bibliothèque avec « ebony restore » ou réinstallez ebony.")
+		FIN
+		j = ChaîneVersJSON(sTexte)
+		SI PAS JSONExiste(j, "generateur") ALORS
+			RENVOYER ""
+		FIN
+		jg = j["generateur"]
+		SI PAS JSONExiste(jg, "classe") ALORS
+			ExceptionDéclenche(22, sChemin + " : generateur.classe manque (le nom de la classe du générateur). Restaurez la bibliothèque avec « ebony restore » ou réinstallez ebony.")
+		FIN
+		sClasse est une chaîne = "" + jg["classe"]
+		SI PAS EbNomDeClasseAscii(sClasse) ALORS
+			ExceptionDéclenche(22, sChemin + " : generateur.classe « " + sClasse + " » n'est pas un nom de classe (lettres ASCII, chiffres et soulignés, en commençant par une lettre). Restaurez la bibliothèque avec « ebony restore » ou réinstallez ebony.")
+		FIN
+		SI PAS JSONExiste(jg, "graine") ALORS
+			RENVOYER sClasse + "()"
+		FIN
+		sGraine est une chaîne = "" + jg["graine"]
+		SI PAS EbEnvEstEntier(sGraine) ALORS
+			ExceptionDéclenche(22, sChemin + " : generateur.graine « " + sGraine + " » n'est pas un entier. Restaurez la bibliothèque avec « ebony restore » ou réinstallez ebony.")
+		FIN
+		RENVOYER sClasse + "(" + sGraine + ")"
+	FIN
+FIN

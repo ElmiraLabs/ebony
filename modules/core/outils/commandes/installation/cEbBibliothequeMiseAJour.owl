@@ -1,0 +1,66 @@
+// Résultat de « ebony upgrade » : ce qui a été fait pour aligner le projet sur l'ebony installé. Objet valeur immuable, rempli par le constructeur.
+cEbBibliothequeMiseAJour est une Classe
+PRIVÉ
+	sVersion      est une chaîne = ""
+	sChemin       est une chaîne = ""
+	bCopiee       est un booléen = Faux
+	bConfModifiee est un booléen = Faux
+
+	tabAbsentes est un tableau de chaînes
+
+	PROCEDURE Constructeur(Version est une chaîne, Chemin est une chaîne, Copiee est un booléen, ConfModifiee est un booléen, Absentes est un tableau de chaînes)
+		:sVersion = Version
+		:sChemin = Chemin
+		:bCopiee = Copiee
+		:bConfModifiee = ConfModifiee
+		POUR TOUT sCle DE Absentes
+			TableauAjoute(:tabAbsentes, sCle)
+		FIN
+	FIN
+
+	// La version de la bibliothèque du projet après l'opération (celle de l'ebony installé) ; c'est aussi le nouveau minimum d'ebony.conf.
+	PROCEDURE PUBLIQUE Version() : chaîne
+		RENVOYER :sVersion
+	FIN
+
+	// Le chemin complet du dossier ebony/ du projet.
+	PROCEDURE PUBLIQUE Chemin() : chaîne
+		RENVOYER :sChemin
+	FIN
+
+	// Vrai si la bibliothèque a été copiée dans ebony/ (il était absent ou vide).
+	PROCEDURE PUBLIQUE Copiee() : booléen
+		RENVOYER :bCopiee
+	FIN
+
+	// Vrai si ebony.conf a été réécrit (son minimum n'était pas la version installée).
+	PROCEDURE PUBLIQUE ConfModifiee() : booléen
+		RENVOYER :bConfModifiee
+	FIN
+
+	// Les clés des variables de configuration que les modules du projet déclarent (manifestes de l'ebony installé) et que config/env.json ne déclare pas ; vide si elles y sont toutes ou si le projet n'a pas de config/env.json.
+	// upgrade ne les ajoute pas : il les signale.
+	PROCEDURE PUBLIQUE VariablesAbsentes() : tableau de chaînes
+		RENVOYER :tabAbsentes
+	FIN
+
+	// La note affichée pour ces variables (« » s'il n'y en a pas) : config/env.json n'est pas modifié, et leurs définitions sont dans les manifestes copiés dans ebony/modules/.
+	PROCEDURE PUBLIQUE NoteVariablesAbsentes() : chaîne
+		SI :tabAbsentes..Occurrence = 0 ALORS
+			RENVOYER ""
+		FIN
+		sNoms est une chaîne = ""
+		POUR TOUT sCle DE :tabAbsentes
+			SI sNoms <> "" ALORS
+				sNoms += ", "
+			FIN
+			sNoms += sCle
+		FIN
+		RENVOYER "Attention : config/env.json ne déclare pas " + sNoms + ", que les modules de ce projet attendent. Il n'a pas été modifié (il est à vous) : ajoutez-y ces variables (leurs définitions sont dans ebony/modules/, membre « environnement » du module), puis vérifiez avec « ebony env »."
+	FIN
+
+	// Vrai si rien n'a été écrit : le projet était déjà aligné.
+	PROCEDURE PUBLIQUE DejaAJour() : booléen
+		RENVOYER (PAS :bCopiee) ET (PAS :bConfModifiee)
+	FIN
+FIN

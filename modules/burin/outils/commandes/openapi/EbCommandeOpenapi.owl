@@ -1,0 +1,18 @@
+EbCommandeOpenapi est une CollectionDeProcédures
+
+	// Racine de composition de « openapi » : calcule le document OpenAPI 3.0.3 du projet du dossier courant (voir cEbGenerationOpenapi), puis l'écrit sur la sortie standard, ou dans le fichier de --sortie (voir cEbEcritureOpenapi).
+	// Le document est calculé en entier avant toute écriture : une erreur n'écrit rien. Une erreur est une exception (codes 22, 24, 28, 30, 31, 53), donc code de sortie 1 (70 sans le lanceur) ; un usage incorrect ou une description incorrecte est un code 25 (sortie 2).
+	PROCEDURE EbExecuteOpenapi()
+		tabArgs     est un tableau de chaînes             = EbListeArgumentsApres("openapi")
+		oDemande    est un cEbDemandeOpenapi(tabArgs)
+		oSysteme    est un cEbSystemeFichiersReel
+		oGeneration est un cEbGenerationOpenapi(oSysteme)
+		sDocument   est une chaîne                        = oGeneration.Execute()
+		SI oDemande.Sortie() = "" ALORS
+			Trace(sDocument)
+		SINON
+			oEcriture est un cEbEcritureOpenapi(oSysteme, oSysteme)
+			Trace("Document OpenAPI écrit : " + oEcriture.Ecrit(oDemande, sDocument))
+		FIN
+	FIN
+FIN

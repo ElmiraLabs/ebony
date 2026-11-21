@@ -1,0 +1,106 @@
+// Tests de EbFichiersModules : quels fichiers des modules écrire pour un projet et une commande, d'après ce que leur manifeste demande (commande, capacité du fournisseur, option auth).
+// Fonctions pures, des fournisseurs inventés : le cœur ne connaît aucun nom, il compare les mots que le manifeste donne.
+
+// Un fichier de module de test : chemin, option, capacité, commande ; une ligne de contenu qui porte le jeton de la table des utilisateurs.
+PROCEDURE EbTestFichierSelection(sChemin est une chaîne, sOption est une chaîne, sCapacite est une chaîne, sCommande est une chaîne) : cEbFichierModule
+	tabLignes est un tableau de chaînes
+	TableauAjoute(tabLignes, "table : {table_utilisateurs}")
+	oFichier est un cEbFichierModule = cEbFichierModule("essai", sChemin, sOption, sCapacite, Faux, sCommande, "", tabLignes)
+	RENVOYER oFichier
+FIN
+
+// Les fournisseurs inventés : alpha et zeta, la capacité « deplacer » n'est offerte que par alpha.
+PROCEDURE EbTestFournisseursSelection() : cEbFournisseursModule
+	tabValeurs est un tableau de chaînes
+	tabNoms    est un tableau de chaînes
+	tabListes  est un tableau de chaînes
+	TableauAjoute(tabValeurs, "alpha")
+	TableauAjoute(tabValeurs, "zeta")
+	TableauAjoute(tabNoms, "deplacer")
+	TableauAjoute(tabListes, "alpha")
+	oFournisseurs est un cEbFournisseursModule = cEbFournisseursModule(tabValeurs, "alpha", tabNoms, tabListes)
+	RENVOYER oFournisseurs
+FIN
+
+// Les chemins des fichiers rendus, séparés par des virgules.
+PROCEDURE EbTestCheminsSelection(fichiers est un tableau) : chaîne
+	sChemins est une chaîne = ""
+	POUR TOUT oFichier DE fichiers
+		sChemins += EbSeparateur(sChemins) + oFichier.Chemin()
+	FIN
+	RENVOYER sChemins
+FIN
+
+// Sans aucune condition, un fichier est écrit par new, init et add, pour tout fournisseur et pour un projet sans base.
+PROCEDURE scenario_fichier_sans_condition_toujours_ecrit()
+	tabFichiers est un tableau
+	TableauAjoute(tabFichiers, EbTestFichierSelection("config/A.owl", "", "", ""))
+	oAvecBase est un cEbOptionsProjet = cEbOptionsProjet("api", "alpha", Faux, "")
+	oSansBase est un cEbOptionsProjet = cEbOptionsProjet("slim", "", Faux, "")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oAvecBase, "new", EbTestFournisseursSelection())), "config/A.owl", "new")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oAvecBase, "init", EbTestFournisseursSelection())), "config/A.owl", "init")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oAvecBase, "add", EbTestFournisseursSelection())), "config/A.owl", "add")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oSansBase, "new", EbTestFournisseursSelection())), "config/A.owl", "un projet sans base")
+FIN
+
+// Un fichier limité à « new » n'est écrit que par new.
+PROCEDURE scenario_fichier_limite_a_new()
+	tabFichiers est un tableau
+	TableauAjoute(tabFichiers, EbTestFichierSelection("config/N.owl", "", "", "new"))
+	oOptions est un cEbOptionsProjet = cEbOptionsProjet("api", "alpha", Faux, "")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oOptions, "new", EbTestFournisseursSelection())), "config/N.owl", "new l'écrit")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oOptions, "init", EbTestFournisseursSelection())), "", "init non")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oOptions, "add", EbTestFournisseursSelection())), "", "add non")
+FIN
+
+// Un fichier qui exige une capacité n'est écrit que si le fournisseur du projet l'offre : alpha oui, zeta non, pas de base non.
+PROCEDURE scenario_fichier_exige_une_capacite()
+	tabFichiers est un tableau
+	TableauAjoute(tabFichiers, EbTestFichierSelection("database/D.owl", "", "deplacer", ""))
+	oAlpha est un cEbOptionsProjet = cEbOptionsProjet("api", "alpha", Faux, "")
+	oZeta  est un cEbOptionsProjet = cEbOptionsProjet("api", "zeta", Faux, "")
+	oRien  est un cEbOptionsProjet = cEbOptionsProjet("slim", "", Faux, "")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oAlpha, "new", EbTestFournisseursSelection())), "database/D.owl", "alpha l'offre")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oZeta, "new", EbTestFournisseursSelection())), "", "zeta ne l'offre pas")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oRien, "new", EbTestFournisseursSelection())), "", "sans base : aucune capacité")
+FIN
+
+// L'option auth : le fichier n'est écrit que si le projet demande l'authentification, avec {table_utilisateurs} remplacé par la table choisie.
+PROCEDURE scenario_fichier_option_auth()
+	tabFichiers est un tableau
+	TableauAjoute(tabFichiers, EbTestFichierSelection("config/Auth.owl", "auth", "", ""))
+	oAvec     est un cEbOptionsProjet = cEbOptionsProjet("api", "alpha", Vrai, "users")
+	oSans     est un cEbOptionsProjet = cEbOptionsProjet("api", "alpha", Faux, "")
+	tabEcrits est un tableau          = EbFichiersAEcrire(tabFichiers, oAvec, "new", EbTestFournisseursSelection())
+	dbgVérifieEgalité(tabEcrits..Occurrence, 1, "avec auth : écrit")
+	oEcrit est un cEbFichierModule = tabEcrits[1]
+	dbgVérifieEgalité(oEcrit.Contenu(), "table : users" + Caract(10), "le jeton est remplacé")
+	dbgVérifieEgalité(tabFichiers[1].Contenu(), "table : {table_utilisateurs}" + Caract(10), "l'original n'est pas modifié")
+	dbgVérifieEgalité(EbFichiersAEcrire(tabFichiers, oSans, "new", EbTestFournisseursSelection())..Occurrence, 0, "sans auth : rien")
+FIN
+
+// L'ordre du manifeste est gardé, et les conditions se cumulent (commande, capacité, option).
+PROCEDURE scenario_ordre_et_conditions_cumulees()
+	tabFichiers est un tableau
+	TableauAjoute(tabFichiers, EbTestFichierSelection("config/1.owl", "", "", ""))
+	TableauAjoute(tabFichiers, EbTestFichierSelection("database/2.owl", "auth", "deplacer", "new"))
+	TableauAjoute(tabFichiers, EbTestFichierSelection("database/3.owl", "", "deplacer", ""))
+	oOptions est un cEbOptionsProjet = cEbOptionsProjet("api", "alpha", Vrai, "users")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oOptions, "new", EbTestFournisseursSelection())), "config/1.owl, database/2.owl, database/3.owl", "new : tout, dans l'ordre")
+	dbgVérifieEgalité(EbTestCheminsSelection(EbFichiersAEcrire(tabFichiers, oOptions, "add", EbTestFournisseursSelection())), "config/1.owl, database/3.owl", "add : sans celui qui est limité à new")
+FIN
+
+// Les capacités manquantes : seulement celles que des fichiers concernés par la commande et l'option demandent et que le fournisseur n'offre pas, sans doublon.
+PROCEDURE scenario_capacites_non_offertes()
+	tabFichiers est un tableau
+	TableauAjoute(tabFichiers, EbTestFichierSelection("database/1.owl", "", "deplacer", ""))
+	TableauAjoute(tabFichiers, EbTestFichierSelection("database/2.owl", "", "deplacer", ""))
+	TableauAjoute(tabFichiers, EbTestFichierSelection("database/3.owl", "", "voler", ""))
+	TableauAjoute(tabFichiers, EbTestFichierSelection("database/4.owl", "", "ramper", "new"))
+	TableauAjoute(tabFichiers, EbTestFichierSelection("config/5.owl", "", "", ""))
+	oZeta est un cEbOptionsProjet = cEbOptionsProjet("api", "zeta", Faux, "")
+	dbgVérifieEgalité(EbListeVirgules(EbCapacitesNonOffertes(tabFichiers, oZeta, "add", EbTestFournisseursSelection())), "deplacer, voler", "add : deplacer (une fois) et voler ; ramper est limité à new ; un fichier sans capacité n'en manque aucune")
+	dbgVérifieEgalité(EbListeVirgules(EbCapacitesNonOffertes(tabFichiers, oZeta, "new", EbTestFournisseursSelection())), "deplacer, voler, ramper", "new : ramper aussi")
+	oAlpha est un cEbOptionsProjet = cEbOptionsProjet("api", "alpha", Faux, "")
+	dbgVérifieEgalité(EbListeVirgules(EbCapacitesNonOffertes(tabFichiers, oAlpha, "add", EbTestFournisseursSelection())), "voler", "alpha offre deplacer : reste voler")
+FIN

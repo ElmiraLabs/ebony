@@ -1,0 +1,49 @@
+/*
+ * Couleurs d'ebony : l'orange des oreilles du logo (#F09820), à la place du bleu par défaut de VitePress.
+ * Mode clair : un orange plus foncé, car du texte blanc sur #F09820 ne passe pas (contraste 2,3 : 1) ;
+ * #B45309 donne 5,0 : 1 en texte blanc sur le bouton et en lien sur fond blanc.
+ * Mode sombre : l'orange vif du logo, avec du texte sombre sur le bouton (8,2 : 1).
+ */
+:root {
+  --vp-c-brand-1: #b45309;
+  --vp-c-brand-2: #9a4508;
+  --vp-c-brand-3: #b45309;
+  --vp-c-brand-soft: rgba(240, 152, 32, 0.14);
+
+  --vp-button-brand-bg: #b45309;
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-text: #ffffff;
+  --vp-button-brand-hover-bg: #9a4508;
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-hover-text: #ffffff;
+  --vp-button-brand-active-bg: #853b06;
+  --vp-button-brand-active-border: transparent;
+  --vp-button-brand-active-text: #ffffff;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #b45309 30%, #f09820);
+}
+
+.dark {
+  --vp-c-brand-1: #f5a524;
+  --vp-c-brand-2: #f09820;
+  --vp-c-brand-3: #f09820;
+  --vp-c-brand-soft: rgba(240, 152, 32, 0.16);
+
+  --vp-button-brand-bg: #f09820;
+  --vp-button-brand-text: #181010;
+  --vp-button-brand-hover-bg: #f5a524;
+  --vp-button-brand-hover-text: #181010;
+  --vp-button-brand-active-bg: #d98410;
+  --vp-button-brand-active-text: #181010;
+
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #f5a524 30%, #f0b050);
+}
+
+/*
+ * Logo en mode sombre : son contour est presque noir, il se fond dans le fond de la page.
+ * Un fin halo crème le détache en attendant une vraie version sombre du dessin.
+ */
+.dark img[src$='logo-ebony.png'] {
+  filter: drop-shadow(0 0 1.5px #f0e8d8) drop-shadow(0 0 1px #f0e8d8);
+}

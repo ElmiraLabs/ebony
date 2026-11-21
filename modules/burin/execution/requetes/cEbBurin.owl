@@ -1,0 +1,62 @@
+// L'objet d'entrée de Burin, l'outil de base de données d'Ebony : il commence une requête (Select, Insert, Update, Del) et assemble les conditions (AllOf, AnyOf, Raw). Le code généré le nomme « db » ; la bibliothèque, elle, ne déclare aucun « db »
+// (OWL refuse toute variable ou paramètre « db » dans un projet qui en a un au sommet). On l'obtient, on ne l'instancie pas dans le code de l'application.
+// Les assembleurs sont des méthodes d'instance, pas des fonctions globales : elles masqueraient des fonctions natives d'OWL, et une méthode GLOBALE d'une autre classe échoue selon l'ordre d'analyse.
+// OWL n'a pas d'arguments variables : AllOf et AnyOf prennent UN TABLEAU de conditions et IGNORENT un tableau vide et les conditions vides (les filtres facultatifs).
+cEbBurin est une Classe
+PRIVÉ
+	oDialecte est un iEbDialecteSql
+
+	PROCEDURE Constructeur(Dialecte est un iEbDialecteSql)
+		:oDialecte = Dialecte
+	FIN
+
+	// Le dialecte de la base : ce qui change d'une base SQL à l'autre dans le texte d'une requête.
+	PROCEDURE PUBLIQUE Dialecte() : iEbDialecteSql
+		RENVOYER :oDialecte
+	FIN
+
+	// Commence un SELECT. Un constructeur NEUF à chaque appel : il se remplit en place, deux requêtes ne doivent pas se partager leur état.
+	PROCEDURE PUBLIQUE Select() : cEbSelect
+		oSelect est un cEbSelect(:oDialecte)
+		RENVOYER oSelect
+	FIN
+
+	// Commence un INSERT dans cette table : db.Insert(produits).Values(ligne). Un constructeur neuf à chaque appel.
+	PROCEDURE PUBLIQUE Insert(oTable est un cEbTable) : cEbInsert
+		oInsert est un cEbInsert(:oDialecte, oTable)
+		RENVOYER oInsert
+	FIN
+
+	// Commence un UPDATE de cette table : db.Update(produits).Set(valeurs).Where(condition). Sans condition, il est REFUSÉ (7008) sauf ForAllRows().
+	PROCEDURE PUBLIQUE Update(oTable est un cEbTable) : cEbUpdate
+		oUpdate est un cEbUpdate(:oDialecte, oTable)
+		RENVOYER oUpdate
+	FIN
+
+	// Commence un DELETE de cette table : db.Del(produits).Where(condition) (« Delete » est un mot refusé par OWL). Sans condition, il est REFUSÉ (7008) sauf ForAllRows().
+	PROCEDURE PUBLIQUE Del(oTable est un cEbTable) : cEbDelete
+		oDelete est un cEbDelete(:oDialecte, oTable)
+		RENVOYER oDelete
+	FIN
+	// Toutes ces conditions (un tableau de cEbSql), jointes par AND et entre parenthèses. Un tableau vide ou des conditions vides donnent une condition vide, que Where ignore.
+	PROCEDURE PUBLIQUE AllOf(conditions est un tableau) : cEbSql
+		oSql est un cEbSql
+		oSql.Joint(" AND ", conditions)
+		RENVOYER oSql
+	FIN
+
+	// L'une de ces conditions (un tableau de cEbSql), jointes par OR et entre parenthèses. Mêmes règles que AllOf.
+	PROCEDURE PUBLIQUE AnyOf(conditions est un tableau) : cEbSql
+		oSql est un cEbSql
+		oSql.Joint(" OR ", conditions)
+		RENVOYER oSql
+	FIN
+
+	// Du SQL brut avec des paramètres nommés : db.Raw("prix > {min}", parametres) où parametres["min"] = 10. Chaque {nom} devient une valeur de la requête, jamais écrite dans le texte (l'erreur 7007 sinon).
+	// C'est la porte de sortie quand le constructeur ne sait pas écrire une condition : acceptée partout où une condition l'est.
+	PROCEDURE PUBLIQUE Raw(sTexte est une chaîne, parametres est un tableau associatif) : cEbSql
+		oSql est un cEbSql
+		oSql.AjouteBrut(sTexte, parametres)
+		RENVOYER oSql
+	FIN
+FIN

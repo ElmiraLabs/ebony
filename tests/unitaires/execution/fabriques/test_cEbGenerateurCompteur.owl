@@ -1,0 +1,77 @@
+// Tests du générateur à compteur : les valeurs d'une ligne se déduisent de son numéro, sont valides (dates comprises) et ne dépendent d'aucun hasard : les mêmes partout.
+
+// Un générateur sur la ligne n (n appels à NouvelleLigne).
+PROCEDURE EbTestGenerateurLigne(nLigne est un entier) : cEbGenerateurCompteur
+	oGenerateur est un cEbGenerateurCompteur
+	POUR i = 1 À nLigne
+		oGenerateur.NouvelleLigne()
+	FIN
+	RENVOYER oGenerateur
+FIN
+
+// Avant la première ligne, le numéro est 0 ; chaque NouvelleLigne l'augmente de 1.
+PROCEDURE scenario_numero_de_ligne()
+	oGenerateur est un cEbGenerateurCompteur
+	dbgVérifieEgalité(oGenerateur.NumeroLigne(), 0, "avant la première ligne")
+	oGenerateur.NouvelleLigne()
+	oGenerateur.NouvelleLigne()
+	dbgVérifieEgalité(oGenerateur.NumeroLigne(), 2, "deux lignes")
+FIN
+
+// Texte, entier, réel et booléen se déduisent du numéro de ligne.
+PROCEDURE scenario_valeurs_simples()
+	oUn   est un cEbGenerateurCompteur = EbTestGenerateurLigne(1)
+	oDeux est un cEbGenerateurCompteur = EbTestGenerateurLigne(2)
+	dbgVérifieEgalité(oUn.ValeurTexte("nom"), "nom 1", "texte de la ligne 1")
+	dbgVérifieEgalité(oDeux.ValeurTexte("nom"), "nom 2", "texte de la ligne 2")
+	dbgVérifieEgalité(oUn.ValeurEntier(), 1, "entier")
+	dbgVérifieEgalité(oDeux.ValeurEntier(), 2, "entier de la ligne 2")
+	dbgVérifieEgalité(oUn.ValeurReel(), 1.5, "réel : n + 0,5")
+	dbgVérifieEgalité(oDeux.ValeurReel(), 2.5, "réel de la ligne 2")
+	dbgVérifieVrai(oUn.ValeurBooleen(), "booléen vrai pour une ligne impaire")
+	dbgVérifieFaux(oDeux.ValeurBooleen(), "booléen faux pour une ligne paire")
+FIN
+
+// Deux générateurs neufs rendent les mêmes valeurs : rien n'est tiré au hasard.
+PROCEDURE scenario_deterministe()
+	oA est un cEbGenerateurCompteur = EbTestGenerateurLigne(5)
+	oB est un cEbGenerateurCompteur = EbTestGenerateurLigne(5)
+	dbgVérifieEgalité(oA.ValeurTexte("x"), oB.ValeurTexte("x"), "texte")
+	dbgVérifieEgalité(oA.ValeurDate(), oB.ValeurDate(), "date")
+	dbgVérifieEgalité(oA.ValeurDateHeure(), oB.ValeurDateHeure(), "date-heure")
+FIN
+
+// Les dates : la ligne 1 est le 2026-01-01, puis un jour de plus ; le 29e jour passe au mois suivant ; après 12 mois, l'année suivante. La date-heure ajoute une heure et des minutes valides.
+PROCEDURE scenario_dates()
+	dbgVérifieEgalité(EbTestGenerateurLigne(1).ValeurDate(), "2026-01-01", "ligne 1")
+	dbgVérifieEgalité(EbTestGenerateurLigne(2).ValeurDate(), "2026-01-02", "ligne 2")
+	dbgVérifieEgalité(EbTestGenerateurLigne(28).ValeurDate(), "2026-01-28", "ligne 28 : dernier jour du mois")
+	dbgVérifieEgalité(EbTestGenerateurLigne(29).ValeurDate(), "2026-02-01", "ligne 29 : mois suivant")
+	dbgVérifieEgalité(EbTestGenerateurLigne(336).ValeurDate(), "2026-12-28", "ligne 336 : dernier jour de l'année")
+	dbgVérifieEgalité(EbTestGenerateurLigne(337).ValeurDate(), "2027-01-01", "ligne 337 : année suivante")
+	dbgVérifieEgalité(EbTestGenerateurLigne(1).ValeurDateHeure(), "2026-01-01T09:07:00", "date-heure de la ligne 1")
+	dbgVérifieEgalité(EbTestGenerateurLigne(10).ValeurDateHeure(), "2026-01-10T08:10:00", "date-heure de la ligne 10")
+FIN
+
+// Chaque date et date-heure rendue sur 400 lignes est valide au sens du Poinçon (aucun jour ou mois impossible).
+PROCEDURE scenario_toutes_les_dates_sont_valides()
+	oGenerateur est un cEbGenerateurCompteur
+	nInvalides  est un entier                = 0
+	POUR i = 1 À 400
+		oGenerateur.NouvelleLigne()
+		SI PAS EbDateIsoValide(oGenerateur.ValeurDate()) ALORS
+			nInvalides++
+		FIN
+		SI PAS EbDateHeureIsoValide(oGenerateur.ValeurDateHeure()) ALORS
+			nInvalides++
+		FIN
+	FIN
+	dbgVérifieEgalité(nInvalides, 0, "aucune date invalide sur 400 lignes")
+FIN
+
+// Une sorte donne son nom au texte (« produit 3 ») ; sans sorte, le comportement est celui de ValeurTexte.
+PROCEDURE scenario_texte_de_sorte()
+	oTrois est un cEbGenerateurCompteur = EbTestGenerateurLigne(3)
+	dbgVérifieEgalité(oTrois.ValeurTexteDeSorte("produit", "nom"), "produit 3", "la sorte nomme le texte")
+	dbgVérifieEgalité(oTrois.ValeurTexteDeSorte("", "nom"), "nom 3", "sans sorte : le nom de la colonne, comme ValeurTexte")
+FIN

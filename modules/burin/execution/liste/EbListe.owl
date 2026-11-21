@@ -1,0 +1,187 @@
+// Les aides de la liste d'une ressource (voir cEbCriteresListe) : lecture des paramètres de l'adresse, et la requête Burin qu'en tirent les repositories SQL générés (une page, et le total sous les mêmes filtres).
+// Une Collection de procédures de la bibliothèque : tout nom commence par « EbListe ».
+EbListe est une CollectionDeProcédures
+
+	// La limite par défaut d'une page, et la plus grande permise : une liste ne rend jamais toute la table d'un coup.
+	PROCEDURE EbListeLimiteDefaut() : entier
+		RENVOYER 20
+	FIN
+
+	PROCEDURE EbListeLimiteMax() : entier
+		RENVOYER 100
+	FIN
+
+	// Le texte d'un paramètre de l'adresse, décodé (« %C3%A9 » devient « é », « + » une espace). Un paramètre absent arrive Null quand un paramètre suivant est présent : c'est alors « ».
+	PROCEDURE EbListeTexte(sBrut est une chaîne) : chaîne
+		SI sBrut = Null ALORS
+			RENVOYER ""
+		FIN
+		RENVOYER URLDecode(sBrut)
+	FIN
+
+	// Vrai pour un entier écrit en chiffres (avec un « - » facultatif), de neuf chiffres au plus : assez pour une page, un décalage ou un identifiant, et sans dépassement.
+	PROCEDURE EbListeEntierValide(sTexte est une chaîne) : booléen
+		RENVOYER RegexVérifie(sTexte, "^-?[0-9]{1,9}$")
+	FIN
+
+	// Vrai pour un réel écrit avec un point décimal facultatif (« 12 », « -3.5 »), sans exposant.
+	PROCEDURE EbListeReelValide(sTexte est une chaîne) : booléen
+		RENVOYER RegexVérifie(sTexte, "^-?[0-9]{1,15}([.][0-9]{1,10})?$")
+	FIN
+
+	// Ce qu'une valeur de filtre doit être, pour un message d'erreur.
+	PROCEDURE EbListeDescriptionType(sType est une chaîne) : chaîne
+		SELON sType
+			CAS "entier"
+			RENVOYER "un entier"
+			CAS "reel"
+			RENVOYER "un nombre (point décimal)"
+			CAS "booleen"
+			RENVOYER "true, false, 1 ou 0"
+			CAS "date"
+			RENVOYER "une date au format AAAA-MM-JJ"
+			CAS "dateheure"
+			RENVOYER "une date et une heure au format AAAA-MM-JJTHH:MM:SS"
+			AUTRE CAS
+			RENVOYER "un texte"
+		FIN
+	FIN
+
+	// Les noms séparés par « , ».
+	PROCEDURE EbListeSlugs(tabNoms est un tableau de chaînes) : chaîne
+		sRes est une chaîne = ""
+		POUR TOUT sNom DE tabNoms
+			SI sRes <> "" ALORS
+				sRes += ", "
+			FIN
+			sRes += sNom
+		FIN
+		RENVOYER sRes
+	FIN
+
+
+	// Le nom de la colonne clé d'une table (la première qui l'est).
+	PROCEDURE EbListeNomCle(oTable est un cEbTable) : chaîne
+		POUR TOUT oColonne DE oTable.Colonnes()
+			SI oColonne.Cle() ALORS
+				RENVOYER oColonne.Nom()
+			FIN
+		FIN
+		RENVOYER ""
+	FIN
+
+	// Le corps JSON de la réponse d'une liste : { "donnees": [ les lignes ], "meta": { "total", "page", "limite", "pages" } }. sLignes : les lignes déjà écrites en JSON, séparées par « , ».
+	// « pages » est le nombre de pages sous les filtres (0 pour une liste vide) ; une page au-delà de la fin rend « donnees » vide, sans erreur.
+	PROCEDURE EbListeReponse(sLignes est une chaîne, nTotal est un entier, oCriteres est un cEbCriteresListe) : chaîne
+		nPages est un entier = PartieEntière((nTotal + oCriteres.Limite() - 1) / oCriteres.Limite())
+		RENVOYER `{"donnees":[` + sLignes + `],"meta":{"total":` + nTotal + `,"page":` + oCriteres.Page() + `,"limite":` + oCriteres.Limite() + `,"pages":` + nPages + `}}`
+	FIN
+
+	// ---- Le même travail en mémoire (le repository en mémoire des tests) : filtrer, trier, découper ----
+
+	// Vrai si la valeur est celle du filtre (égalité exacte) : sert au repository en mémoire.
+	PROCEDURE EbListeCorrespond(tabLigne est un tableau associatif, tabFiltres est un tableau associatif) : booléen
+		POUR TOUT valeur, sColonne DE tabFiltres
+			SI tabLigne[sColonne] <> valeur ALORS
+				RENVOYER Faux
+			FIN
+		FIN
+		RENVOYER Vrai
+	FIN
+
+	// Vrai si la ligne A passe AVANT la ligne B pour la colonne triée (un booléen compte comme 0 ou 1 ; a égalité, la clé croissante départage).
+	PROCEDURE EbListeAvant(tabA est un tableau associatif, tabB est un tableau associatif, sTri est une chaîne, bDescendant est un booléen, sCle est une chaîne) : booléen
+		SI sTri <> "" ET tabA[sTri] <> tabB[sTri] ALORS
+			SI bDescendant ALORS
+				RENVOYER tabA[sTri] > tabB[sTri]
+			FIN
+			RENVOYER tabA[sTri] < tabB[sTri]
+		FIN
+		RENVOYER tabA[sCle] < tabB[sCle]
+	FIN
+
+	// Les rangs (de 1 à N, dans tabValeurs : une ligne = un tableau associatif colonne vers valeur) des lignes qui passent les filtres, dans l'ordre des critères (tri demandé, puis clé croissante).
+	PROCEDURE EbListeRetenus(tabValeurs est un tableau, oCriteres est un cEbCriteresListe, sCle est une chaîne) : tableau
+		tabRangs   est un tableau
+		tabFiltres est un tableau associatif = oCriteres.Filtres()
+		POUR i = 1 À tabValeurs..Occurrence
+			tabLigne est un tableau associatif = tabValeurs[i]
+			SI EbListeCorrespond(tabLigne, tabFiltres) ALORS
+				TableauAjoute(tabRangs, i)
+			FIN
+		FIN
+		// Tri par insertion : les listes du repository en mémoire sont petites (des tests).
+		POUR i = 2 À tabRangs..Occurrence
+			nRang      est un entier             = tabRangs[i]
+			j          est un entier             = i - 1
+			tabCourant est un tableau associatif = tabValeurs[nRang]
+			bDecale    est un booléen            = Vrai
+			TANTQUE j >= 1 ET bDecale
+				tabAutre est un tableau associatif = tabValeurs[tabRangs[j]]
+				SI EbListeAvant(tabCourant, tabAutre, oCriteres.Tri(), oCriteres.Descendant(), sCle) ALORS
+					tabRangs[j + 1] = tabRangs[j]
+					j--
+				SINON
+					bDecale = Faux
+				FIN
+			FIN
+			tabRangs[j + 1] = nRang
+		FIN
+		RENVOYER tabRangs
+	FIN
+
+	// La page demandée parmi des rangs déjà filtrés et triés : de Decalage()+1 à Decalage()+Limite(), au plus. Au-delà de la fin : aucun rang, pas d'erreur.
+	PROCEDURE EbListeFenetre(tabRangs est un tableau, oCriteres est un cEbCriteresListe) : tableau
+		tabPage est un tableau
+		nFin    est un entier  = oCriteres.Decalage() + oCriteres.Limite()
+		SI nFin > tabRangs..Occurrence ALORS
+			nFin = tabRangs..Occurrence
+		FIN
+		POUR i = oCriteres.Decalage() + 1 À nFin
+			TableauAjoute(tabPage, tabRangs[i])
+		FIN
+		RENVOYER tabPage
+	FIN
+
+	// Le SELECT d'une liste sous ses filtres et son ordre : les filtres d'égalité (tous exigés), le tri demandé puis la clé croissante (pour que deux pages ne se recouvrent pas), sans limite.
+	PROCEDURE EbListeSelect(oBurin est un cEbBurin, oTable est un cEbTable, oCriteres est un cEbCriteresListe) : cEbSelect
+		oSelect    est un cEbSelect          = oBurin.Select().From(oTable)
+		tabFiltres est un tableau associatif = oCriteres.Filtres()
+		POUR TOUT valeur, sColonne DE tabFiltres
+			oSelect.AndWhere(oTable.ColonneNommee(sColonne).Eq(valeur))
+		FIN
+		sCle est une chaîne = EbListeNomCle(oTable)
+		SI oCriteres.Tri() <> "" ALORS
+			SI oCriteres.Descendant() ALORS
+				oSelect.OrderBy(oTable.ColonneNommee(oCriteres.Tri()).Desc())
+			SINON
+				oSelect.OrderBy(oTable.ColonneNommee(oCriteres.Tri()).Asc())
+			FIN
+		FIN
+		SI oCriteres.Tri() <> sCle ALORS
+			oSelect.OrderBy(oTable.ColonneNommee(sCle).Asc())
+		FIN
+		RENVOYER oSelect
+	FIN
+
+	// La requête d'UNE page : les filtres, l'ordre, la limite et le décalage des critères.
+	PROCEDURE EbListeRequete(oBurin est un cEbBurin, oTable est un cEbTable, oCriteres est un cEbCriteresListe) : cEbRequete
+		oSelect est un cEbSelect = EbListeSelect(oBurin, oTable, oCriteres)
+		oSelect.Limit(oCriteres.Limite())
+		oSelect.Offset(oCriteres.Decalage())
+		RENVOYER oSelect.ToSQL()
+	FIN
+
+	// Le total lu dans le résultat de EbListeRequeteCompte (une ligne, un entier sous « total »).
+	PROCEDURE EbListeTotal(oResultat est un cEbResultatSql) : entier
+		tabCompte est un tableau associatif = oResultat.Lignes()[1]
+		nTotal    est un entier             = tabCompte["total"]
+		RENVOYER nTotal
+	FIN
+
+	// Le nombre de lignes sous les MÊMES filtres, sans page ni ordre : « SELECT COUNT(*) AS "total" … ».
+	PROCEDURE EbListeRequeteCompte(oBurin est un cEbBurin, oTable est un cEbTable, oCriteres est un cEbCriteresListe) : cEbRequete
+		oSelect est un cEbSelect = EbListeSelect(oBurin, oTable, oCriteres)
+		RENVOYER oSelect.ToSQLCount()
+	FIN
+FIN

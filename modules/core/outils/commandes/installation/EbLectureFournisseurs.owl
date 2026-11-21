@@ -1,0 +1,114 @@
+// Lecture du membre « fournisseurs » du manifeste d'un module (modules/<nom>/execution/modules/<nom>.json) : les fournisseurs que le module offre à l'application, lus comme des DONNÉES.
+// Forme : { "valeurs": ["a", "b"], "defaut": "a", "capacites": [ { "nom": "x", "fournisseurs": ["a"] } ] } : « valeurs » (obligatoire) sont les valeurs permises de --base, « defaut » (obligatoire, l'une d'elles) celle d'un projet créé sans option,
+// « capacites » (facultatif) : pour chaque capacité (un mot que des fichiers du module citent), les fournisseurs qui l'offrent (sous-ensemble de « valeurs »). Un manifeste sans « fournisseurs » n'en offre aucun.
+// Une entrée invalide est une exception de code 22 qui la nomme (installation d'ebony abîmée : il faut la réinstaller). Fonctions sans accès au disque : le texte lu est passé en argument.
+EbLectureFournisseurs est une CollectionDeProcédures
+
+	// Les fournisseurs déclarés dans le texte d'un manifeste (un cEbFournisseursModule, vide si le manifeste n'en déclare pas). sChemin ne sert qu'aux messages. Lève (22) au premier défaut, en nommant l'entrée.
+	PROCEDURE EbFournisseursDuManifeste(sTexte est une chaîne, sChemin est une chaîne) : cEbFournisseursModule
+		tabValeurs         est un tableau de chaînes
+		tabNomsCapacites   est un tableau de chaînes
+		tabListesCapacites est un tableau de chaînes
+		sDefaut            est une chaîne            = ""
+		j                  est un JSON
+		SI PAS JSONValide(sTexte) ALORS
+			ExceptionDéclenche(22, "Le manifeste " + sChemin + " n'est pas du JSON valide. Réinstallez ebony.")
+		FIN
+		j = ChaîneVersJSON(sTexte)
+		SI JSONExiste(j, "fournisseurs") ALORS
+			sOu est une chaîne = sChemin + " : fournisseurs"
+			// Un objet, et rien d'autre (le type d'un JSON ne distingue pas un objet d'une liste : on regarde sa forme écrite, comme pour les listes).
+			SI Gauche(JSONVersChaîne(j.fournisseurs, psdMinifie), 1) <> "{" ALORS
+				ExceptionDéclenche(22, sOu + " doit être un objet { valeurs, defaut, capacites }. Réinstallez ebony.")
+			FIN
+			tabValeurs = EbListeDeNoms(j.fournisseurs, "valeurs", sOu, Vrai)
+			SI tabValeurs..Occurrence = 0 ALORS
+				ExceptionDéclenche(22, sOu + " : « valeurs » doit lister au moins un fournisseur. Réinstallez ebony.")
+			FIN
+			SI JSONExiste(j.fournisseurs, "defaut") ALORS
+				SI TypeVar(j.fournisseurs.defaut) = owlChaîne ALORS
+					sDefaut = j.fournisseurs.defaut
+				FIN
+			FIN
+			SI TableauCherche(tabValeurs, sDefaut) < 1 ALORS
+				ExceptionDéclenche(22, sOu + " : « defaut » « " + sDefaut + " » doit être l'une des valeurs. Réinstallez ebony.")
+			FIN
+			SI JSONExiste(j.fournisseurs, "capacites") ALORS
+				EbCapacitesDuManifeste(j.fournisseurs, sOu, tabValeurs, tabNomsCapacites, tabListesCapacites)
+			FIN
+		FIN
+		oFournisseurs est un cEbFournisseursModule(tabValeurs, sDefaut, tabNomsCapacites, tabListesCapacites)
+		RENVOYER oFournisseurs
+	FIN
+
+	// Les capacités du membre « capacites » de l'objet v (une liste d'objets { nom, fournisseurs }) : remplit tabNoms et tabListes (« a|b|c », par paire). Chaque nom de capacité et chaque fournisseur est un nom valide ;
+	// aucun doublon ; chaque fournisseur est l'une des valeurs. Lève (22) au premier défaut, en nommant l'entrée.
+	PROCEDURE EbCapacitesDuManifeste(v est un JSON, sOu est une chaîne, tabValeurs est un tableau de chaînes, tabNoms est un tableau de chaînes, tabListes est un tableau de chaînes)
+		SI Gauche(JSONVersChaîne(v.capacites, psdMinifie), 1) <> "[" ALORS
+			ExceptionDéclenche(22, sOu + " : « capacites » doit être une liste d'objets { nom, fournisseurs }. Réinstallez ebony.")
+		FIN
+		nIndice est un entier = 0
+		POUR TOUT c DE v.capacites
+			nIndice++
+			sCapacite est une chaîne = ""
+			sEntree   est une chaîne = sOu + " : capacites[" + nIndice + "]"
+			SI Gauche(JSONVersChaîne(c, psdMinifie), 1) <> "{" ALORS
+				ExceptionDéclenche(22, sEntree + " doit être un objet { nom, fournisseurs }. Réinstallez ebony.")
+			FIN
+			SI JSONExiste(c, "nom") ALORS
+				SI TypeVar(c.Nom) = owlChaîne ALORS
+					sCapacite = c.Nom
+				FIN
+			FIN
+			SI PAS EbNomModuleValide(sCapacite) ALORS
+				ExceptionDéclenche(22, sEntree + " : « nom » doit être un nom valide (lettres minuscules ASCII, chiffres et soulignés, commençant par une lettre). Réinstallez ebony.")
+			FIN
+			SI TableauCherche(tabNoms, sCapacite) > 0 ALORS
+				ExceptionDéclenche(22, sEntree + " : la capacité « " + sCapacite + " » est écrite deux fois. Réinstallez ebony.")
+			FIN
+			tabFournisseurs est un tableau de chaînes = EbListeDeNoms(c, "fournisseurs", sEntree, Vrai)
+			sListe          est une chaîne            = ""
+			POUR TOUT sFournisseur DE tabFournisseurs
+				SI TableauCherche(tabValeurs, sFournisseur) < 1 ALORS
+					ExceptionDéclenche(22, sEntree + " : « fournisseurs » cite « " + sFournisseur + " », qui n'est pas dans « valeurs ». Réinstallez ebony.")
+				FIN
+				SI sListe <> "" ALORS
+					sListe += "|"
+				FIN
+				sListe += sFournisseur
+			FIN
+			TableauAjoute(tabNoms, sCapacite)
+			TableauAjoute(tabListes, sListe)
+		FIN
+	FIN
+	// La liste de noms du membre sMembre de l'objet v : une liste de textes valides (lettres minuscules ASCII, chiffres et soulignés, commençant par une lettre), sans doublon. Lève (22) sinon.
+	// bObligatoire : le membre doit exister.
+	PROCEDURE EbListeDeNoms(v est un JSON, sMembre est une chaîne, sOu est une chaîne, bObligatoire est un booléen) : tableau de chaînes
+		tabNoms est un tableau de chaînes
+		SI PAS JSONExiste(v, sMembre) ALORS
+			SI bObligatoire ALORS
+				ExceptionDéclenche(22, sOu + " : « " + sMembre + " » est obligatoire. Réinstallez ebony.")
+			FIN
+			RENVOYER tabNoms
+		FIN
+		SI Gauche(JSONVersChaîne(v[sMembre], psdMinifie), 1) <> "[" ALORS
+			ExceptionDéclenche(22, sOu + " : « " + sMembre + " » doit être une liste de textes. Réinstallez ebony.")
+		FIN
+		nIndice est un entier = 0
+		POUR TOUT sNom DE v[sMembre]
+			nIndice++
+			SI TypeVar(sNom) <> owlChaîne ALORS
+				ExceptionDéclenche(22, sOu + " : " + sMembre + "[" + nIndice + "] doit être un texte. Réinstallez ebony.")
+			FIN
+			// Les mêmes règles qu'un nom de module : lettres minuscules ASCII, chiffres et soulignés (ce nom finit dans ebony.conf et dans des messages).
+			SI PAS EbNomModuleValide(sNom) ALORS
+				ExceptionDéclenche(22, sOu + " : " + sMembre + "[" + nIndice + "] « " + sNom + " » n'est pas un nom valide (lettres minuscules ASCII, chiffres et soulignés, commençant par une lettre). Réinstallez ebony.")
+			FIN
+			SI TableauCherche(tabNoms, sNom) > 0 ALORS
+				ExceptionDéclenche(22, sOu + " : " + sMembre + "[" + nIndice + "] « " + sNom + " » est écrit deux fois. Réinstallez ebony.")
+			FIN
+			TableauAjoute(tabNoms, sNom)
+		FIN
+		RENVOYER tabNoms
+	FIN
+FIN
