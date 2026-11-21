@@ -8,7 +8,7 @@
 
 Inspiré d'AdonisJS, pour le langage de programmation [OWL](https://github.com/followthewhiteowl/neowl) (sans rapport avec l'OWL du W3C, le Web Ontology Language).
 
-[![Version](https://img.shields.io/github/v/release/ElmiraLabs/ebony?style=for-the-badge&label=Version)](https://github.com/ElmiraLabs/ebony/releases)
+[![Version 0.1.5](https://img.shields.io/badge/Version-0.1.5-orange?style=for-the-badge)](https://github.com/ElmiraLabs/ebony/releases)
 [![Licence MIT](https://img.shields.io/github/license/ElmiraLabs/ebony?style=for-the-badge&label=Licence)](LICENSE)
 [![OWL 1.9.0](https://img.shields.io/badge/OWL-1.9.0-blue?style=for-the-badge)](https://github.com/followthewhiteowl/neowl)
 [![Plateformes : Windows et Linux](https://img.shields.io/badge/Plateformes-Windows%20%7C%20Linux-lightgrey?style=for-the-badge)](https://elmiralabs.github.io/ebony/guides/installation)
