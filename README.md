@@ -28,7 +28,7 @@ Inspiré d'AdonisJS, pour le langage de programmation [OWL](https://github.com/f
 
 Une commande crée un projet qui compile et démarre sous `owl serve`. Une autre écrit, pour une table, l'entité, les repositories, le service métier, le contrôleur REST et les tests, avec des routes protégées par jeton. Le code généré est lisible et reste le vôtre.
 
-> **Préversion 0.1.5.** Une API REST structurée pour OWL, générée par une commande : SQLite et PostgreSQL, Windows et Linux. Ce qui n'est pas encore là (pages web, bureau, connexion d'utilisateur) est dit dans le [statut et les limites](https://elmiralabs.github.io/ebony/guides/statut-et-limites).
+> **Préversion 0.1.5.** Ebony crée en une seule commande une API REST pour OWL. Cette version est une préversion : elle peut encore évoluer.
 
 ## Installation
 
