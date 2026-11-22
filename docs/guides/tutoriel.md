@@ -1,6 +1,6 @@
 # Tutoriel : construire une petite boutique
 
-Les [premiers pas](premiers-pas.md) génèrent une ressource. Ce tutoriel va plus loin : **deux tables liées**, une **validation** dans `ressource.json`, une **règle métier** dans le service, une **route de votre cru**, et un **test** de la règle. À la fin, vous savez où écrire quoi dans un projet Ebony ; la carte des couches est dans [le chemin d'une requête](architecture.md). Référence : Ebony 0.1.5, OWL 1.9.0, SQLite, Ubuntu 26.04 (WSL 2). Les réponses citées sont celles du service.
+Les [premiers pas](premiers-pas.md) génèrent une ressource. Ce tutoriel va plus loin : **deux tables liées**, une **validation** dans `ressource.json`, une **règle métier** dans le service, une **route de votre cru**, et un **test** de la règle. À la fin, vous savez où écrire quoi dans un projet Ebony ; la carte des couches est dans [le chemin d'une requête](architecture.md). Base : SQLite. Les réponses citées sont celles du service.
 
 Prérequis : Ebony installé ([installation](installation.md)), `ebony doctor` sans erreur. Sous Linux, `cp` remplace `Copy-Item` et `curl` remplace `curl.exe`.
 
@@ -21,7 +21,7 @@ ebony migrate
 ebony token create tuto            # copiez le secret (eb_…)
 ```
 
-`categorie:entier@categories.id` déclare une clé étrangère : la migration écrit `"categorie" INTEGER NOT NULL REFERENCES "categories" ("id")`. Les deux migrations sont écrites dans la même minute : elles passent dans l'**ordre alphabétique** de leur intention, `CreeCategories` avant `CreeProduits`, ce qu'il faut ici.
+`categorie:entier@categories.id` déclare une clé étrangère : la migration écrit `"categorie" INTEGER NOT NULL REFERENCES "categories" ("id")`. Les migrations sont appliquées dans l'ordre alphabétique de leur nom quand elles portent la même minute : ici `CreeCategories` passe avant `CreeProduits`, ce qu'il faut pour la clé étrangère.
 
 Lancez le service (`owl serve --port 8080`), puis, dans un second terminal, avec le secret à la place de `eb_…` :
 
@@ -47,7 +47,8 @@ POST /api/produits  {"nom":"Gomme","prix":-1,"categorie":1}
   → 422  {"code":"invalide","message":"Le champ « prix » doit être supérieur ou égal à 0."}
 ```
 
-Les règles possibles (longueurs, bornes, valeurs permises, motif, dates) sont décrites dans [les routes générées](make.md). Un contrôle que ce vocabulaire ne permet pas s'écrit dans la route, avec `ExceptionDéclenche(422, "…")` : l'exception est attrapée par la route (`QUAND EXCEPTION`), traduite en statut HTTP et en JSON (voir [les erreurs](erreurs.md)).
+Les règles possibles (longueurs, bornes, valeurs permises, motif, dates) sont décrites dans [la description d'une ressource](ressource-json.md). Un contrôle que ce vocabulaire ne permet pas s'écrit dans la route, avec `ExceptionDéclenche(422, "…")` : la route attrape l'exception et la traduit en statut HTTP et en JSON (voir [les erreurs](erreurs.md)).
+
 ## 3. La règle métier : dans le service
 
 Une règle métier ne dépend ni du HTTP ni de la base. Règle : **deux produits d'une même catégorie ne portent pas le même nom** (casse ignorée). Dans `app/services/produit/cServiceProduit.owl`, remplacez la méthode `Ajoute` :
@@ -150,7 +151,7 @@ owl test -vv --filter test_cServiceProduit
 # STATUS: ALL CLEAR (1 suites, 18 assertions, 7 scenarios)
 ```
 
-Écrivez de la même façon un scénario « le même nom dans une autre catégorie est permis ». `owl test` recompile tout le projet à chaque suite : les 10 suites de ce projet passent en environ deux minutes, le temps croît avec la taille du projet.
+Écrivez de la même façon un scénario « le même nom dans une autre catégorie est permis ».
 
 ## À savoir
 

@@ -36,12 +36,11 @@ Le troisième paramètre du constructeur est le **niveau minimum** : en dessous,
 
 ## À savoir
 
-- **Aucun secret** dans un message ni dans un champ : le journal écrit tel quel ce qu'on lui donne (voir `docs/guides/configuration.md`).
+- **Aucun secret** dans un message ni dans un champ : le journal écrit tel quel ce qu'on lui donne (voir la [configuration](configuration.md)).
 - Les tests utilisent `cEbSortieJournalFictive` (garde les lignes) et `cEbHorlogeFictive` (heure fixe), sans rien écrire sur la sortie.
 
-## Ce qui n'est pas fait
+## Pièges courants
 
-- Le format `clé=valeur` (l'issue proposait JSON ou `clé=valeur` : seul JSON est fourni).
-- Une fraction de seconde dans `ts`, et l'identifiant de corrélation par requête.
-- Le journal dans les routes et dans `surErreur` : le démarrage d'un projet généré écrit déjà `Base ouverte` et `Application démarrée` (une ligne JSON chacune sur la sortie du service), mais les routes générées n'écrivent rien par requête.
-- Non couvert : la collecte de la sortie par un hébergeur réel.
+- **Seul le format JSON est fourni**, pas le format `clé=valeur`.
+- **`ts` n'a pas de fraction de seconde**, et il n'y a pas d'identifiant de corrélation par requête.
+- **Les routes générées n'écrivent rien par requête.** Le démarrage d'un projet généré écrit `Base ouverte` et `Application démarrée` ; pour journaliser une requête, appelez le journal vous-même dans la route.

@@ -40,7 +40,7 @@ La route qui a appelé le service attrape l'exception (`QUAND EXCEPTION`), tradu
 
 ```text
 GET  /api/produits                       (sans jeton)         →  401  {"code":"non_autorise",…}
-POST /api/produits   {"prix":3}                                →  422  {"code":"invalide","message":"Champ obligatoire absent : nom."}
+POST /api/produits   {"prix":3}                                →  422  {"code":"invalide","message":"Champs obligatoires absents : nom."}
 GET  /api/produits/999                                         →  404  {"code":"introuvable","message":"Produit introuvable : 999"}
 ```
 

@@ -26,10 +26,11 @@ if ($version -notmatch '^\d+\.\d+\.\d+$') { Echec "VERSION ne contient pas un nu
 # Fichier -> ce qu'on y attend : au moins une mention. Les expressions : "." tient la place du e accentue de Preversion.
 $mentionsAttendues = @(
     @{ Fichier = 'README.md';                          Expression = 'Pr.version (\d+\.\d+\.\d+)' },
+    @{ Fichier = 'README.md';                          Expression = 'Version-(\d+\.\d+\.\d+)-orange' },
     @{ Fichier = 'docs\index.md';                      Expression = 'Pr.version (\d+\.\d+\.\d+)' },
     @{ Fichier = 'docs\guides\introduction.md';        Expression = 'Pr.version (\d+\.\d+\.\d+)' },
     @{ Fichier = 'docs\guides\statut-et-limites.md';   Expression = 'Ebony (\d+\.\d+\.\d+) est une' },
-    @{ Fichier = 'docs\guides\installation.md';        Expression = 'ebony-(\d+\.\d+\.\d+)\\bin' }
+    @{ Fichier = 'docs\guides\compatibilite.md';       Expression = '\| Ebony \| (\d+\.\d+\.\d+)' }
 )
 
 $nbMentions = 0

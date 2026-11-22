@@ -1,95 +1,63 @@
-# Installer ebony
+# Installer Ebony
 
-Prérequis : [OWL](https://github.com/followthewhiteowl/neowl) **1.9.0**, la version de référence d'Ebony (`owl` dans le PATH ; les installateurs ne l'installent pas) ; Windows ou Linux (Ubuntu sous WSL 2). Windows : PowerShell 5.1, fourni avec le système. Linux : `sh`, `tar`, `curl` ou `wget`.
+**Prérequis** : [OWL](https://github.com/followthewhiteowl/neowl) dans le `PATH`, dans la version indiquée par la [compatibilité](/guides/compatibilite), et `git`. Ebony tourne sous Windows et sous Linux.
 
-## En une commande
+Pour l'instant, Ebony s'installe depuis ses sources. L'installation en une seule commande suivra la première release publiée.
 
-**Windows** (PowerShell, pas besoin d'être administrateur) :
-
-```powershell
-irm https://github.com/ElmiraLabs/ebony/releases/latest/download/install.ps1 | iex
-```
-
-**Linux** :
-
-```sh
-curl -fsSL https://github.com/ElmiraLabs/ebony/releases/latest/download/install.sh | sh
-```
-
-Puis, dans un **nouveau terminal** (le PATH n'est lu qu'au démarrage d'un terminal) : `ebony doctor`.
-
-Ce que fait l'installateur, dans l'ordre :
-
-1. Il vérifie que `owl` est dans le PATH. Sinon il s'arrête, dit où l'installer, et n'a rien installé.
-2. Il télécharge l'archive de la dernière release (`ebony.zip` ou `ebony.tar.gz`) **dans un dossier temporaire qu'il crée**, et vérifie sa somme SHA-256 (fichier `.sha256` voisin). Une somme fausse, un fichier absent ou illisible : il s'arrête, rien n'est installé.
-3. Il installe : sous Windows, `ebony install` (copie dans `%LOCALAPPDATA%\Programs\ebony\<version>\`, dossier `bin` ajouté au PATH **de l'utilisateur**) ; sous Linux, une copie dans `~/.local/share/ebony/<version>/` et un lien `~/.local/bin/ebony`. Une version déjà installée n'est pas recopiée ; un fichier ou un lien existant qui n'est pas le sien n'est jamais remplacé (il est signalé).
-4. Il supprime son dossier temporaire : **le seul dossier qu'il supprime**.
-
-Sous Linux, le script ne modifie ni votre PATH ni vos fichiers de profil : si `~/.local/bin` n'y est pas, il vous donne la ligne à ajouter. Aucun droit root n'est utile.
-
-**À savoir** : la somme SHA-256 protège d'un téléchargement corrompu, pas d'une release compromise. Lisez le script avant de l'exécuter si vous voulez (`install/install.ps1` et `install/install.sh` dans le dépôt : ils font une centaine de lignes) :
-
-```powershell
-irm https://github.com/ElmiraLabs/ebony/releases/latest/download/install.ps1 -OutFile install.ps1   # lisez-le, puis : powershell -ExecutionPolicy Bypass -File .\install.ps1
-```
-
-Variables facultatives : `EBONY_URL_BASE` (une adresse `https://…` ou un dossier local qui contient `ebony.zip` ou `ebony.tar.gz` et leur `.sha256` : un miroir, ou un essai hors ligne) ; sous Linux aussi `EBONY_HOME` (défaut `~/.local/share/ebony`) et `EBONY_BIN` (défaut `~/.local/bin`). Pour retirer ebony sous Linux : `curl -fsSL https://github.com/ElmiraLabs/ebony/releases/latest/download/install.sh | sh -s -- --uninstall` (ou `sh install.sh --uninstall` depuis un fichier). Cette désinstallation est bornée comme `ebony uninstall` : elle ne supprime que les dossiers de version posés par l'installateur (ceux qui portent le fichier `INSTALLE`), sous un dossier nommé `ebony` qui n'est pas un lien, et le lien `ebony` seulement s'il pointe dans ce dossier ; elle ne touche ni à votre PATH ni à vos projets, et n'a pas besoin d'`owl`. Ce qu'elle n'a pas posé est laissé, avec un avertissement.
-
-**Profil Windows avec un accent** (`C:\Users\Hélène`) : la version 1.8.1 d'OWL n'ouvre pas son propre fichier passé en chemin absolu accentué (corrigé dans OWL 1.9.0 : `owl` et `owl --check` ouvrent un chemin absolu accentué ; ce défaut ne concerne plus que la 1.8.1). L'installateur travaille dans un dossier temporaire sans accent ni espace (le nom court 8.3 du dossier temporaire, sinon `C:\ProgramData`), mais `ebony install` copie dans `%LOCALAPPDATA%`, donc sous le profil : il le dit si cela échoue.
-
-## Windows, à la main
-
-### Depuis l'archive (sans git)
-
-Téléchargez `ebony.zip` et `ebony.zip.sha256` depuis les [releases](https://github.com/ElmiraLabs/ebony/releases), vérifiez la somme, extrayez, installez :
-
-```powershell
-(Get-FileHash .\ebony.zip -Algorithm SHA256).Hash.ToLower()      # doit être la somme du fichier .sha256
-Expand-Archive .\ebony.zip C:\sources
-C:\sources\ebony-0.1.5\bin\ebony.cmd install
-```
-
-### Depuis un clone (pour contribuer)
+## Windows
 
 ```powershell
 git clone https://github.com/ElmiraLabs/ebony C:\sources\ebony
 C:\sources\ebony\bin\ebony.cmd install
 ```
 
-Ouvrez ensuite un **nouveau terminal** (le PATH n'est lu qu'au démarrage d'un terminal) et vérifiez :
+Ouvrez ensuite un **nouveau terminal** (le `PATH` n'est lu qu'au démarrage d'un terminal) et vérifiez :
 
 ```powershell
 ebony doctor
 ```
 
-### Ce que font `install` et `uninstall`
+`ebony install` copie Ebony dans `%LOCALAPPDATA%\Programs\ebony\<version>\` et ajoute son dossier `bin` au `PATH` **de l'utilisateur** : aucun droit d'administrateur n'est nécessaire. La copie installée est autonome : le clone peut être supprimé.
 
-- `ebony install` copie le strict nécessaire dans `%LOCALAPPDATA%\Programs\ebony\<version>\` (un dossier par version) et ajoute le dossier `bin` de cette version au PATH **de l'utilisateur** (aucun droit d'administrateur, jamais le PATH de la machine). Les entrées des autres versions d'ebony sont retirées du PATH, leurs fichiers restent.
-- Le relancer est sans danger : une version déjà installée n'est pas recopiée. Pour mettre à jour : `git pull` dans le clone, puis `ebony install` ; si la version a changé, la nouvelle s'installe à côté de l'ancienne.
-- `ebony install` ne supprime jamais rien : pour retirer une ancienne version seule, supprimez son dossier à la main.
-- **`ebony uninstall`** retire ebony de votre PATH **et supprime les versions installées** (c'est la seule commande d'ebony qui supprime des fichiers). Elle est bornée : elle ne supprime que les dossiers de version qui portent le fichier `INSTALLE` laissé par `ebony install`, sous un dossier nommé `ebony` ; un autre dossier, un fichier ou un lien qui s'y trouverait est laissé, et dit. Elle peut être lancée depuis la copie installée elle-même ; fermez les terminaux ouverts dans le dossier d'ebony avant. Vos projets ne sont jamais touchés.
-- **N'ouvrez pas un terminal en administrateur** : `ebony install` n'en a pas besoin. Un clone ou une installation faits en administrateur appartiennent au groupe Administrateurs, et git refuse ensuite de les ouvrir depuis un terminal normal (« dubious ownership »).
-- La copie installée est autonome : le clone ou l'archive extraite peuvent être supprimés. Si le nom de votre dossier utilisateur contient un accent, `owl` ne peut pas ouvrir un chemin absolu qui en contient : `ebony install` le dit.
+**Mettre à jour** : `git pull` dans le clone, puis `ebony install`. Une nouvelle version s'installe à côté de l'ancienne ; relancer la commande sans changement de version ne fait rien.
+
+**Retirer Ebony** : `ebony uninstall` retire Ebony du `PATH` et supprime les versions installées par `ebony install`. C'est la seule commande d'Ebony qui supprime des fichiers, et elle est bornée : elle ne touche que les dossiers qu'`ebony install` a posés. Vos projets ne sont jamais touchés. Fermez les terminaux ouverts dans le dossier d'Ebony avant de la lancer.
+
+### Pièges courants
+
+- **N'ouvrez pas un terminal en administrateur.** `ebony install` n'en a pas besoin, et un clone fait en administrateur est ensuite refusé par git depuis un terminal normal (« dubious ownership »).
+- **Une commande `ebony` introuvable juste après l'installation** : ouvrez un nouveau terminal.
+- **Un nom d'utilisateur avec un accent** (`C:\Users\Hélène`) : si `owl` refuse un fichier passé par un chemin absolu accentué, mettez OWL à jour vers la version indiquée par la [compatibilité](/guides/compatibilite). `ebony install` vous le dit si la copie échoue.
 
 ## Linux
 
-Le plus simple : [la commande unique](#en-une-commande) (`install.sh`). Le parcours des [premiers pas](premiers-pas.md) fonctionne avec le lanceur `bin/ebony`, sous Ubuntu 26.04 (WSL 2) avec OWL 1.9.0 et SQLite. À la main :
+```sh
+git clone https://github.com/ElmiraLabs/ebony ~/ebony
+chmod +x ~/ebony/bin/ebony
+ln -s ~/ebony/bin/ebony ~/.local/bin/ebony
+```
 
-1. Installez OWL (l'archive Linux de la release d'OWL, `owl` dans le PATH) et `curl`.
-2. Récupérez ebony : le dépôt cloné, ou `ebony.tar.gz` et `ebony.tar.gz.sha256` des [releases](https://github.com/ElmiraLabs/ebony/releases) (vérifiez la somme avec `sha256sum -c`, extrayez avec `tar -xzf`). Si le bit d'exécution manque : `chmod +x bin/ebony`.
-3. Mettez-le dans le PATH : un lien suffit, `ln -s /chemin/vers/ebony/bin/ebony ~/.local/bin/ebony` (le lanceur suit les liens).
-4. Vérifiez : `ebony --version`, puis `ebony doctor` dans un dossier de travail.
+Vérifiez que `~/.local/bin` est dans votre `PATH`, puis :
 
-Ce qui diffère de Windows :
+```sh
+ebony --version
+ebony doctor
+```
 
-- **Pas d'`ebony install` ni d'`ebony uninstall`** : ils modifient le PATH par le registre de Windows. Sous Linux ils répondent par un refus net (code 2), sans rien faire : pour retirer ebony, utilisez `install.sh --uninstall` (voir plus haut).
-- **Une commande est plus lente depuis un clone** : les mini-projets par commande (`.commandes/`) sont écrits par un script PowerShell et ne sont dans l'archive que si elle a été construite sous Windows.
-- **Les chemins** : ebony écrit ses chemins avec `\` en interne mais garde le style `/` d'un chemin Linux. Deux chemins qui ne diffèrent que par la casse sont deux dossiers.
+Les commandes `ebony install` et `ebony uninstall` n'existent pas sous Linux : elles modifient le `PATH` par le registre de Windows et répondent par un refus (code 2). Pour retirer Ebony, supprimez le lien et le dossier cloné.
 
-Non couvert : les autres distributions, PostgreSQL sous Linux, `owl test` d'un projet généré sous Linux, un chemin de projet avec accents ou espaces.
+Le parcours des [premiers pas](premiers-pas.md) fonctionne sous Linux avec le lanceur `bin/ebony`. La distribution testée est Ubuntu 26.04 (WSL 2) : voir [Ebony sous Linux](linux.md).
 
 ## Dans un projet cloné avec git
 
-Le dossier `ebony/` (la bibliothèque d'exécution) est ignoré par git, comme `node_modules` : après un `git clone` de votre projet, lancez `ebony restore` pour le restaurer d'après la version **minimale** notée dans `ebony.conf`. `ebony upgrade` aligne ensuite le projet sur l'ebony installé. Aucun des deux ne supprime ni ne rétrograde rien : pour mettre à niveau un projet dont `ebony/` existe déjà, supprimez ce dossier, puis lancez `ebony upgrade`.
+Le dossier `ebony/` (la bibliothèque d'exécution) n'est pas versionné, comme `node_modules`. Après un `git clone` de votre projet, lancez :
 
-`upgrade` ne met à jour que `ebony/` et `ebony.conf`. Le code qu'Ebony avait généré dans votre projet (services, contrôleurs, repositories, tests, migrations) reste tel quel, et une variable de configuration qu'une version plus récente demande (par exemple `APP_ENV`) n'est **pas** ajoutée à `config/env.json`, qui est à vous : `upgrade` **la signale** (« config/env.json ne déclare pas APP_ENV… ») à chaque lancement tant qu'elle manque, y compris quand le projet est déjà aligné. Ajoutez-la à la main : sa définition (clé, type, défaut) est dans le manifeste du module copié dans `ebony/modules/`, membre `environnement`. Ensuite `ebony env` la liste. Sur un projet créé par une version précédente (Windows, SQLite), après cet ajout, le projet compile, ses tests passent et son service démarre.
+```
+ebony restore
+```
+
+`restore` recopie `ebony/` d'après la version minimale notée dans `ebony.conf`. Pour aligner ensuite le projet sur l'Ebony installé, lancez `ebony upgrade`. Aucune des deux commandes ne supprime ni ne rétrograde rien : pour mettre à niveau un projet dont `ebony/` existe déjà, supprimez ce dossier, puis lancez `ebony upgrade`.
+
+`upgrade` ne met à jour que `ebony/` et `ebony.conf`. Le code généré dans votre projet (services, contrôleurs, repositories, tests, migrations) reste tel quel.
+
+Si une version plus récente demande une variable de configuration (par exemple `APP_ENV`), `upgrade` ne l'ajoute pas à `config/env.json`, qui est à vous : il vous la **signale** à chaque lancement tant qu'elle manque. Ajoutez-la à la main : sa définition (clé, type, défaut) est dans le manifeste du module, `ebony/modules/<module>.json`, membre `environnement`. Ensuite, `ebony env` la liste.

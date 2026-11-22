@@ -1,6 +1,6 @@
 # Premiers pas : de `ebony new` à une API qui répond
 
-Un projet, une table, une API REST protégée par un jeton, en quelques commandes. Référence : Ebony 0.1.5, OWL 1.9.0, SQLite. Les sorties citées sont celles du programme. Sous Linux : `cp` à la place de `Copy-Item`, `curl` à la place de `curl.exe` (la commande `ebony` est le lien posé par `install.sh`).
+Un projet, une table, une API REST protégée par un jeton, en quelques commandes. Base : SQLite. Versions prises en charge : voir la [compatibilité](/guides/compatibilite). Les sorties citées sont celles du programme. Sous Linux : `cp` à la place de `Copy-Item`, `curl` à la place de `curl.exe` (voir [Ebony sous Linux](linux.md)).
 
 Prérequis : OWL et ebony installés (voir [l'installation](installation.md)). `ebony doctor` le vérifie.
 
@@ -92,10 +92,13 @@ Les six routes de la ressource : `GET` et `POST /api/produits`, `GET`, `PUT`, `P
 
 - **Un `PUT` remplace toute la ressource et exige tous les champs obligatoires ; un `PATCH` ne change que ceux qu'il envoie.** Un champ du mauvais type n'est pas détecté (voir [le corps d'une requête](architecture.md#le-corps-dune-requête--absent-présent-partiel)). Envoyez tous les champs.
 - **Les erreurs ont une forme unique** : `{"code":"…","message":"…"}`. Voir [les erreurs](erreurs.md).
-- **`owl serve` traite les requêtes une par une** : ne l'exposez pas à une charge imprévisible.
-- Les tests générés se lancent avec `owl test` : les 5 suites de ce guide passent en une quinzaine de secondes. OWL recompile le projet pour chaque suite, donc le temps croît avec la taille du projet.
-- Vos propres routes vont dans le contrôleur de la ressource ou dans `app/http/`, sur le modèle des routes générées.
+- **`owl serve` traite les requêtes une par une** : voir [Performance](performance-et-limites.md).
+- Les tests générés se lancent avec `owl test` : voir [Tester](tests.md).
+- Vos propres routes vont dans le contrôleur de la ressource ou dans `app/http/`, sur le modèle des routes générées : voir [Ajouter une route](routes.md).
 
-## Ce qui n'est pas fait
+## Pour aller plus loin
 
-Pas de commande `ebony seed` (une fabrique d'entités d'exemple est générée avec chaque ressource, et `ebony make seeder` écrit un seeder à lancer avec `owl`), pas de connexion par mot de passe (les jetons identifient un nom), pas de validation au-delà des règles de `ressource.json` (obligation, longueurs, bornes, valeurs permises, motif, dates : voir [make.md](make.md)).
+- [Le tutoriel](tutoriel.md) : deux ressources liées, une validation, une règle métier et un test.
+- [Les routes générées](routes-generees.md) et [la description d'une ressource](ressource-json.md) : tout ce que font les routes et comment les valider.
+- [`ebony make`](make.md) : migrations, fabriques et seeders.
+- [Où en est Ebony](statut-et-limites.md) : ce qui est disponible et ce qui ne l'est pas encore.

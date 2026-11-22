@@ -76,6 +76,8 @@ export default defineConfig({
         items: [
           { text: 'Migrations', link: '/guides/migrate' },
           { text: 'Générer : make', link: '/guides/make' },
+          { text: 'Les routes générées', link: '/guides/routes-generees' },
+          { text: 'La description : ressource.json', link: '/guides/ressource-json' },
           { text: 'Le code généré, fichier par fichier', link: '/guides/code-genere' }
         ]
       },
@@ -84,14 +86,15 @@ export default defineConfig({
         items: [
           { text: "Le chemin d'une requête", link: '/guides/architecture' },
           { text: 'Modules et kits', link: '/guides/modules' },
-          { text: "Statut et limites d'Ebony", link: '/guides/statut-et-limites' },
-          { text: "Limites d'OWL et performance", link: '/guides/performance-et-limites' }
+          { text: "Où en est Ebony", link: '/guides/statut-et-limites' },
+          { text: 'Performance', link: '/guides/performance-et-limites' }
         ]
       },
       {
         text: 'Référence',
         items: [
           { text: 'Commandes', link: '/guides/commandes' },
+          { text: 'Compatibilité', link: '/guides/compatibilite' },
           { text: 'Glossaire', link: '/guides/glossaire' }
         ]
       }

@@ -24,8 +24,8 @@ mon-projet/
 |---|---|---|
 | **api** (par défaut) | Disponible | `app/http/` (service REST, contrôleurs), `app/services/`, `app/donnees/`, `app/domaine/`, `database/migrations/`, `tests/`, `storage/` (SQLite local) ; `config/Auth.owl` avec `--auth`. Détail ci-dessous. |
 | **slim** | Disponible | `app/http/` seulement : le service REST, sans base de données ni migrations, ni variable `DB_*` (`ebony add burin` en ajoute une plus tard). |
-| **web** | Prévu | Ceux de l'API, plus `app/http/pages/` (routes de pages), `vues/` (gabarits HTML), `public/` (CSS, images, scripts) et `ebony/gabarits/`. |
-| **desktop** (bureau) | Prévu | `app/ui/` (une fenêtre par fichier), `app/presentation/` (contrôleurs ou présentateurs), `ressources/` (icônes) ; plus de `app/http/`, sauf si l'application expose aussi une API. |
+| **web** | Pas encore | Ceux de l'API, plus `app/http/pages/` (routes de pages), `vues/` (gabarits HTML), `public/` (CSS, images, scripts) et `ebony/gabarits/`. |
+| **desktop** (bureau) | Pas encore | `app/ui/` (une fenêtre par fichier), `app/presentation/` (contrôleurs ou présentateurs), `ressources/` (icônes) ; plus de `app/http/`, sauf si l'application expose aussi une API. |
 | **mobile** | À l'étude | Structure non définie. |
 
 Seuls `api` et `slim` existent aujourd'hui. Les structures de `web` et de `desktop` sont des **intentions de conception, pas du code** : elles peuvent changer avant d'être livrées.

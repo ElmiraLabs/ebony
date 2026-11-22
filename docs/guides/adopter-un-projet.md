@@ -21,7 +21,7 @@ Il termine par une note sur ce qu'il vous reste à faire, ici appeler le registr
   - app/Composants.owl liste les composants des modules du projet (…) Votre service doit l'appeler pour les démarrer : dans son FinInitialisation, après la création de oApp, ajoutez « POUR TOUT oComposant DE boutiqueComposantsDeclares() », puis « oApp.Ajoute(oComposant) » et « FIN » (voir le guide d'adoption).
 ```
 
-Le nom de la procédure du registre est celui du bloc `est un Projet` de votre `projet.owl` (ici `boutique`), suivi de `ComposantsDeclares` : copiez-le tel que la note l'écrit. (Les projets créés par la 0.1.5 ou avant ont une procédure qui finit par `Fabriques` : Ebony la reconnaît et la garde telle quelle, votre service n'a rien à changer.)
+Le nom de la procédure du registre est celui du bloc `est un Projet` de votre `projet.owl` (ici `boutique`), suivi de `ComposantsDeclares` : copiez-le tel que la note l'écrit.
 
 ## 2. Ajouter le service qui démarre l'application
 
@@ -117,8 +117,10 @@ ebony init --kit slim
 ebony add burin
 ```
 
-Avant `ebony add burin`, `GET /api/health` répond `{"statut":"ok"}` ; après, `{"statut":"ok","base":"ok"}`, et `app/http/ServiceAtelier.owl` est resté identique octet pour octet : seul le registre est réécrit. Voir [Ajouter un module](ajouter-un-module.md).
+Avant `ebony add burin`, `GET /api/health` répond `{"statut":"ok"}` ; après, `{"statut":"ok","base":"ok"}`. Votre service n'a pas changé : seul le registre est réécrit. Voir [Ajouter un module](ajouter-un-module.md).
 
-## Ce qui n'est pas couvert
+## Pièges courants
 
-Un projet OWL déjà riche en services et classes (le parcours a été suivi sur un projet vide), l'ajout de `FinInitialisation` à un `ServiceREST` déjà présent, `--base postgresql` après `init`, et Linux.
+- **Un service sans la boucle sur le registre** : l'application démarre sans base, et les contrôleurs générés refusent tout jeton.
+- **Un projet déjà riche en services et en classes** : ce parcours part d'un projet vide. Vérifiez d'abord que votre projet compile avec `owl --check projet.owl` avant et après `ebony init`.
+- **`--base postgresql` après `init`** et **Linux** : le parcours n'a pas été vérifié dans ces cas.

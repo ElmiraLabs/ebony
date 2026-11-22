@@ -39,6 +39,9 @@ docs/public/
 .github/SECURITY.md
 docs/guides/linux.md
 docs/guides/make.md
+docs/guides/routes-generees.md
+docs/guides/ressource-json.md
+docs/guides/compatibilite.md
 docs/guides/code-genere.md
 docs/guides/migrate.md
 docs/guides/token.md

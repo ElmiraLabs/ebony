@@ -4,14 +4,14 @@ Ebony n'a pas de commande de déploiement : une application est un projet OWL or
 
 Ce guide suit le cas d'une application Ebony sous Linux avec systemd et SQLite. Il indique aussi ce qui n'est pas couvert.
 
-> Référence : Ebony 0.1.5, OWL 1.9.0, Ubuntu 26.04 (WSL 2), SQLite.
+> Testé sous Ubuntu 26.04 (WSL 2), avec SQLite. Versions prises en charge : voir la [compatibilité](/guides/compatibilite).
 
 ## Deux façons de lancer l'application
 
 | Voie | Ce qu'il faut sur le serveur | Quand la choisir |
 |---|---|---|
 | **Un binaire autonome** (`owl-build`) | le binaire et ses fichiers de configuration, rien d'autre | un serveur sans OWL ni Ebony |
-| **Les sources** avec `owl serve` | OWL 1.9.0 et le dossier du projet (avec son `ebony/`) | un serveur où vous voulez relancer `ebony migrate` sur place |
+| **Les sources** avec `owl serve` | OWL (voir la [compatibilité](/guides/compatibilite)) et le dossier du projet (avec son `ebony/`) | un serveur où vous voulez relancer `ebony migrate` sur place |
 
 Le binaire est le plus simple à poser. Les sources permettent de migrer la base directement sur le serveur.
 
@@ -129,14 +129,13 @@ Hors de ce guide : les sauvegardes planifiées (`cron`, minuteur systemd), le ch
 
 - **Santé** : `GET /api/health` est public. Il répond `200` si l'application et la base répondent, `503` sinon.
 - **Journal** : une ligne JSON par événement sur la sortie standard (voir le [journal](journalisation.md)). Au démarrage, deux lignes de texte ordinaire précèdent les lignes JSON : votre collecteur doit les tolérer. Les refus d'authentification s'écrivent sur la sortie d'erreur, une ligne par requête refusée.
-- **Une requête à la fois** : le service traite les requêtes les unes après les autres (voir [limites d'OWL et performance](performance-et-limites.md)). Tenez-en compte avant de promettre un débit.
+- **Une requête à la fois** : le service traite les requêtes les unes après les autres (voir [Performance](performance-et-limites.md)). Tenez-en compte avant de promettre un débit.
 
-## Ce qui n'est pas couvert
+## Pièges courants
 
-- **Un superviseur autre que systemd** (service Windows, conteneur) : aucun fichier d'exemple n'est fourni.
-- **Une unité systemd d'utilisateur** (`systemctl --user`), les options de durcissement (`ProtectSystem`…), et le binaire `owl-build` sous systemd.
-- **HTTPS** : ni derrière un proxy inverse, ni avec le TLS d'OWL.
-- **Plusieurs instances** partageant une même base SQLite.
-- **Un binaire signé** (`--sign`), et un chemin de projet contenant des accents ou des espaces.
-- **Les autres distributions Linux** et Windows Server.
-- **PostgreSQL derrière un binaire** : PostgreSQL est couvert avec `owl serve`, pas avec le binaire.
+- **Un autre superviseur que systemd** (service Windows, conteneur) : aucun fichier d'exemple n'est fourni.
+- **HTTPS** : ce guide ne couvre ni le proxy inverse ni le TLS d'OWL. Mettez un proxy devant le service si vous exposez l'API sur Internet.
+- **Plusieurs instances** qui partagent une même base SQLite : à éviter.
+- **Un chemin de projet avec des accents ou des espaces** : évitez-le sur un serveur.
+- **PostgreSQL derrière un binaire** : PostgreSQL est vérifié avec `owl serve`, pas avec le binaire `owl-build`.
+- **Les autres distributions Linux** que Ubuntu, et Windows Server, n'ont pas été essayées.

@@ -10,7 +10,12 @@ Les mots d'ebony, dans l'ordre où une requête les traverse. Certains (service,
 | **Service** (métier) | Les règles de l'application (« un client inactif ne peut pas commander »). Ne sait rien du HTTP. Il appelle le repository ; le contrôleur appelle le service, jamais le repository. Fichier généré : `app/services/<dossier>/cService<Nom>.owl`, mince au départ (il passe les appels au repository) : c'est là que vous ajoutez vos règles. |
 | **Repository** | Le seul endroit qui parle à la base pour une entité : lire, ajouter, modifier, supprimer. Contrat `iRepo<Nom>`, adaptateurs `cRepo<Nom>Sql` et `cRepo<Nom>Memoire`. |
 | **Entité** | Un objet de l'application (`cClient`) : champs privés, accesseurs `Lit…`, immuable. Ne sait rien de la base ni du HTTP. |
-| **Validation** | Le nettoyage de ce qu'envoie le client, fait par le contrôleur (première couche). Une règle métier relève du service. |
+| **Validation** | Le contrôle de ce qu'envoie le client, fait par le **Poinçon** d'après `ressource.json`, appelé par le contrôleur (première couche). Une règle métier relève du service. |
+| **Poinçon** | Le module qui valide les corps de requête d'après `ressource.json` : voir [la description d'une ressource](ressource-json.md). |
+| **Burin** | Le module de la base de données : connexion, requêtes, repositories SQL, migrations. |
+| **Module** | Une fonctionnalité d'Ebony qu'un projet reçoit ou non (`burin`, `poincon`, `auth`, `figurant`) : voir [les modules](modules.md). |
+| **Kit** | La liste des modules d'un projet à sa création (`api`, `slim`). |
+| **Jeton** | Le secret (`eb_…`) qu'un client envoie pour accéder aux routes protégées : voir [token](token.md). |
 
 ## Service OWL et service métier : deux choses
 
