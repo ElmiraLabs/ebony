@@ -1,0 +1,27 @@
+// Le DÉTAIL structuré d'une erreur 422 (la liste « erreurs » : champ, règle, message), posé par le Poinçon juste avant de lever l'exception et repris par EbCorpsErreurHttp pour l'écrire dans la réponse.
+// Pourquoi à côté de l'exception : ExceptionDéclenche ne porte qu'un code et un TEXTE, et ce texte (« Champs obligatoires absents : nom, prix. ») est ce que lisent les routes et les tests : il reste du texte simple.
+// Pourquoi une classe : un état partagé entre le Poinçon et la réponse tient dans un membre GLOBAL (comme cEbCodeSortie et cEbServiceApplication). owl serve traite les requêtes une par une : le détail posé est celui de la requête en cours.
+// Le détail n'est rendu que pour le MÊME message : un 422 levé à la main avec un autre texte ne reçoit jamais le détail d'une validation précédente. Il est rendu une seule fois (Prend le retire).
+cEbDetailErreur est une Classe
+PRIVÉ
+	GLOBAL
+	sMessagePose est une chaîne = ""
+	sErreursPose est une chaîne = ""
+
+	// Pose le détail d'un message : sListe est le texte JSON d'un tableau d'erreurs (« [{...},{...}] »), sTexte le message de l'exception qui l'accompagne.
+	PROCEDURE PUBLIQUE GLOBALE Pose(sTexte est une chaîne, sListe est une chaîne)
+		cEbDetailErreur.sMessagePose = sTexte
+		cEbDetailErreur.sErreursPose = sListe
+	FIN
+
+	// Le détail posé pour CE message (texte JSON d'un tableau), ou « » s'il n'y en a pas ; le retire dans les deux cas où il correspondait.
+	PROCEDURE PUBLIQUE GLOBALE Prend(sTexte est une chaîne) : chaîne
+		sRes est une chaîne = ""
+		SI cEbDetailErreur.sErreursPose <> "" ET cEbDetailErreur.sMessagePose = sTexte ALORS
+			sRes                         = cEbDetailErreur.sErreursPose
+			cEbDetailErreur.sMessagePose = ""
+			cEbDetailErreur.sErreursPose = ""
+		FIN
+		RENVOYER sRes
+	FIN
+FIN

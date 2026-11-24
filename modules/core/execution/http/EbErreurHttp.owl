@@ -1,17 +1,19 @@
 // Les erreurs d'une route : ce que « ebony make resource » écrit dans son contrôleur (Controleur<Nom>.owl) et que vos propres routes peuvent appeler. Fonctions pures, sauf EbJournaliseErreurHttp.
 // POURQUOI DANS LA ROUTE : le handler « surErreur » d'un service ne reçoit ni le code ni le message d'origine (mesuré, owl 1.7.0 : code vide, message « Exception non gérée : … »). Une route attrape donc l'exception avec QUAND EXCEPTION,
 // lit ExceptionInfo(errCode) et écrit sa réponse avec ces trois fonctions (MoiMême ne peut pas être passé à une procédure : c'est la route qui l'écrit).
-// Codes des repositories générés : 404 introuvable, 409 clé déjà prise, 503 base injoignable, 500 requête refusée. Le Poinçon lève 422 quand les données sont invalides (champ obligatoire absent ou vide, règle violée) et 400 quand la requête est mal formée (adresse ou liste incorrectes).
-// Le détail d'une erreur serveur (500, 503) va au journal, jamais au client ; 400, 401, 404, 409 et 422 sont des erreurs du client et ne sont pas journalisées.
+// Codes des repositories générés : 404 introuvable, 409 clé déjà prise, 503 base injoignable, 500 requête refusée. Le Poinçon lève 422 quand les données sont invalides (champ obligatoire absent ou vide, règle violée), 400 quand la requête est mal formée (adresse ou liste incorrectes) et 415 quand le corps n'est pas envoyé en JSON (Content-Type).
+// Le détail d'une erreur serveur (500, 503) va au journal, jamais au client ; 400, 401, 404, 409, 415 et 422 sont des erreurs du client et ne sont pas journalisées.
 EbErreurHttp est une CollectionDeProcédures
 
-	// Le statut HTTP d'une exception de route : 400 → 400 (requête mal formée), 422 → 422 (données invalides : le Poinçon), 401 → 401, 404 → 404, 409 → 409, 503 → 503, tout le reste → 500.
+	// Le statut HTTP d'une exception de route : 400 → 400 (requête mal formée), 422 → 422 (données invalides : le Poinçon), 415 → 415 (le corps n'est pas du JSON), 401 → 401, 404 → 404, 409 → 409, 503 → 503, tout le reste → 500.
 	PROCEDURE EbStatutHttpDeCode(sCode est une chaîne) : entier
 		SELON sCode
 			CAS "400"
 			RENVOYER httpRequêteIncorrecte
 			CAS "422"
 			RENVOYER 422
+			CAS "415"
+			RENVOYER httpTypeMédiaNonSupporté
 			CAS "401"
 			RENVOYER httpNonAutorisé
 			CAS "404"
@@ -27,11 +29,18 @@ EbErreurHttp est une CollectionDeProcédures
 
 	// Le corps JSON d'une erreur : { "code": "...", "message": "..." } sur une ligne. 400, 404 et 409 rendent le message de l'exception (il ne contient que le nom du champ ou la clé demandée) ; 401 rend un message fixe (il ne dit pas POURQUOI le jeton est refusé) ;
 	// 503 et 500 rendent un message fixe : le détail d'une erreur de base ne sort pas.
+	// 415 (le corps n'est pas envoyé en JSON) : code « type_non_supporte », avec le message de l'exception (fixe, écrit par le Poinçon : il ne cite pas le type reçu).
+	// 422 : si le Poinçon a posé le détail de CE message (cEbDetailErreur), le corps porte aussi « erreurs » : [ { "champ", "regle", "message" } ], une entrée par champ en faute ; sans détail (un 422 levé à la main), il reste { code, message }.
 	PROCEDURE EbCorpsErreurHttp(sCode est une chaîne, sMessage est une chaîne) : chaîne
-		j est un JSON
+		j       est un JSON
+		sDetail est une chaîne = ""
+		sCorps  est une chaîne = ""
 		SELON sCode
 			CAS "400", "422"
 			j["code"] = "invalide"
+			j["message"] = sMessage
+			CAS "415"
+			j["code"] = "type_non_supporte"
 			j["message"] = sMessage
 			CAS "401"
 			j["code"] = "non_autorise"
@@ -49,12 +58,19 @@ EbErreurHttp est une CollectionDeProcédures
 			j["code"] = "erreur_interne"
 			j["message"] = "Une erreur interne est survenue."
 		FIN
-		RENVOYER JSONVersChaîne(j, psdMinifie)
+		sCorps = JSONVersChaîne(j, psdMinifie)
+		SI sCode = "422" ALORS
+			sDetail = cEbDetailErreur.Prend(sMessage)
+			SI sDetail <> "" ALORS
+				sCorps = Gauche(sCorps, Taille(sCorps) - 1) + `,"erreurs":` + sDetail + "}"
+			FIN
+		FIN
+		RENVOYER sCorps
 	FIN
 
-	// Vrai pour une erreur du serveur (tout sauf 400, 401, 404, 409 et 422) : celles dont le détail va au journal.
+	// Vrai pour une erreur du serveur (tout sauf 400, 401, 404, 409, 415 et 422) : celles dont le détail va au journal.
 	PROCEDURE EbEstErreurServeurHttp(sCode est une chaîne) : booléen
-		RENVOYER sCode <> "400" ET sCode <> "401" ET sCode <> "404" ET sCode <> "409" ET sCode <> "422"
+		RENVOYER sCode <> "400" ET sCode <> "401" ET sCode <> "404" ET sCode <> "409" ET sCode <> "415" ET sCode <> "422"
 	FIN
 
 	// Écrit au journal de l'application le détail d'une erreur serveur ; sans effet pour 400, 401, 404 et 409. À appeler dans un service lancé (l'application est posée dans FinInitialisation).

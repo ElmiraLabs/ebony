@@ -1,0 +1,112 @@
+// Le schéma d'une RESSOURCE : construit depuis sa description (app/domaine/<dossier>/ressource.json, écrite par « ebony make resource »), pour que le contrôleur généré valide le corps BRUT avec EbPoinconValide
+// sans que les règles quittent le fichier. Le fichier est relu À CHAQUE REQUÊTE (il est petit) : modifier ressource.json prend effet à la requête suivante, sans régénérer ni redémarrer (comme avant le schéma chaîné).
+// La description est CONTRÔLÉE avant (EbPoinconDescription : 500 qui nomme le champ et la règle) ; le vocabulaire des règles est celui de EbPoincon.owl (texte : longueurMin, longueurMax, valeurs, motif ; entier : min, max, valeurs ; réel : min, max).
+// Le champ du schéma porte la clé JSON de la colonne (voir EbRessourceCle). Un champ « nullable » devient Facultatif, un champ muni d'un « defaut » devient Defaut : voir cEbSchema. La CIBLE (le type de l'objet rendu) n'est pas posée ici : l'appelant la pose avec Cible.
+EbPoinconRessource est une CollectionDeProcédures
+
+	// Les valeurs permises d'une règle « valeurs » (une liste JSON de textes ou de nombres) écrites « a|b|c », comme les attend cEbSchema.Valeurs.
+	PROCEDURE EbRessourceValeurs(jValeurs est un JSON) : chaîne
+		sRes est une chaîne = ""
+		POUR TOUT vValeur DE jValeurs
+			SI sRes <> "" ALORS
+				sRes += "|"
+			FIN
+			SI EbPoinconEstNombre(vValeur) ALORS
+				sRes += EbPoinconTexteNombre(vValeur)
+			SINON
+				sTexte est une chaîne = vValeur
+				sRes += sTexte
+			FIN
+		FIN
+		RENVOYER sRes
+	FIN
+
+	// Le « defaut » d'un champ écrit comme le veut cEbSchema.Defaut : « true » ou « false » pour un booléen, le nombre pour un entier ou un réel, le texte sinon.
+	PROCEDURE EbRessourceDefaut(jChamp est un JSON, sType est une chaîne) : chaîne
+		SI sType = "booleen" ALORS
+			SI EbPoinconVrai(jChamp, "defaut") ALORS
+				RENVOYER "true"
+			FIN
+			RENVOYER "false"
+		FIN
+		SI sType = "entier" OU sType = "reel" ALORS
+			RENVOYER EbPoinconTexteNombre(jChamp["defaut"])
+		FIN
+		sDefaut est une chaîne = jChamp["defaut"]
+		RENVOYER sDefaut
+	FIN
+
+	// Pose sur le dernier champ du schéma les règles de la description (déjà contrôlées).
+	PROCEDURE EbRessourceRegles(oSch est un cEbSchema, jRegles est un JSON)
+		nEntier est un entier  = 0
+		rReel   est un réel    = 0
+		sMotif  est une chaîne = ""
+		SI JSONExiste(jRegles, "longueurMin") ALORS
+			nEntier = jRegles["longueurMin"]
+			oSch.LongueurMin(nEntier)
+		FIN
+		SI JSONExiste(jRegles, "longueurMax") ALORS
+			nEntier = jRegles["longueurMax"]
+			oSch.LongueurMax(nEntier)
+		FIN
+		SI JSONExiste(jRegles, "min") ALORS
+			rReel = jRegles["min"]
+			oSch.Min(rReel)
+		FIN
+		SI JSONExiste(jRegles, "max") ALORS
+			rReel = jRegles["max"]
+			oSch.Max(rReel)
+		FIN
+		SI JSONExiste(jRegles, "valeurs") ALORS
+			oSch.Valeurs(EbRessourceValeurs(jRegles["valeurs"]))
+		FIN
+		SI JSONExiste(jRegles, "motif") ALORS
+			sMotif = jRegles["motif"]
+			oSch.Motif(sMotif)
+		FIN
+	FIN
+
+	// La clé JSON d'une colonne d'après la table « colonne=clé|colonne=clé » (sCles) : la colonne elle-même si elle n'y est pas. Une colonne « date naissance » s'envoie sous la clé « date_naissance » : le générateur écrit la table, il connaît la règle.
+	PROCEDURE EbRessourceCle(sCles est une chaîne, sColonne est une chaîne) : chaîne
+		sTable    est une chaîne = "|" + sCles
+		sDebut    est une chaîne = "|" + sColonne + "="
+		nPosition est un entier  = Position(sTable, sDebut)
+		SI nPosition < 1 ALORS
+			RENVOYER sColonne
+		FIN
+		sReste est une chaîne = Milieu(sTable, nPosition + Taille(sDebut))
+		nFin   est un entier  = Position(sReste, "|")
+		SI nFin > 0 ALORS
+			RENVOYER Gauche(sReste, nFin - 1)
+		FIN
+		RENVOYER sReste
+	FIN
+
+	// Le schéma d'une description déjà lue et contrôlée. sExclus : les colonnes qui n'appartiennent pas au corps, séparées par « | » (la clé générée par la base à la création, la clé de l'adresse pour un remplacement ou une modification) ; « » : aucune.
+	// sCles : la table « colonne=clé|colonne=clé » des colonnes dont la clé JSON n'est pas le nom (voir EbRessourceCle) ; « » : aucune. Le champ du schéma porte la CLÉ JSON : c'est elle que cherche la validation dans le corps, et que disent les messages.
+	PROCEDURE EbSchemaDeDescription(jDescription est un JSON, sExclus est une chaîne, sCles est une chaîne) : cEbSchema
+		oSch est un cEbSchema
+		POUR TOUT jChamp DE jDescription.champs
+			sNom  est une chaîne = jChamp["nom"]
+			sType est une chaîne = jChamp["type"]
+			SI Position("|" + sExclus + "|", "|" + sNom + "|") < 1 ALORS
+				oSch.Champ(EbRessourceCle(sCles, sNom), sType)
+				SI EbPoinconVrai(jChamp, "nullable") ALORS
+					oSch.Facultatif()
+				FIN
+				SI JSONExiste(jChamp, "defaut") ALORS
+					oSch.Defaut(EbRessourceDefaut(jChamp, sType))
+				FIN
+				SI JSONExiste(jChamp, "regles") ALORS
+					EbRessourceRegles(oSch, jChamp["regles"])
+				FIN
+			FIN
+		FIN
+		RENVOYER oSch
+	FIN
+
+	// Le schéma d'une ressource, lu dans son fichier (chemin relatif à la racine du projet : « owl serve » s'y place). Lève 500 si le fichier est absent, n'est pas du JSON ou contient une faute (la première requête qui le lit).
+	PROCEDURE EbSchemaDeRessource(sChemin est une chaîne, sExclus est une chaîne, sCles est une chaîne) : cEbSchema
+		RENVOYER EbSchemaDeDescription(EbPoinconDescription(sChemin), sExclus, sCles)
+	FIN
+FIN

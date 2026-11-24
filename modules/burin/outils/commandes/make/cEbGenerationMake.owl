@@ -146,7 +146,17 @@ PRIVÉ
 		// Tout ce qu'on écrira, avec son contenu, calculé avant de toucher au disque.
 		tabFichiers est un tableau de chaînes
 		tabContenus est un tableau de chaînes
-		sHorodatage est une chaîne            = ""
+		tabTous     est un tableau de chaînes
+		// Un contrôleur déjà écrit qui n'appelle pas EbPoinconValide (écrit avant la validation du corps brut) ne lit pas le schéma du fichier du corps : ebony n'écrit alors PAS ce fichier à côté (il resterait inutilisé) et le dit.
+		// Déclaré avant les SI (voir plus bas : une déclaration dans une branche non exécutée corrompt des variables locales).
+		sControleur  est une chaîne = EbCheminRoutes(oDemande)
+		sTexteAncien est une chaîne = ""
+		bAncien      est un booléen = Faux
+		SI PAS bMigration ET PAS bSeeder ET :oSysteme.FichierExiste(:Complet(sLancement, sControleur)) ALORS
+			sTexteAncien = :oSysteme.LitTexte(:Complet(sLancement, sControleur))
+			bAncien      = Position(sTexteAncien, "EbPoinconValide") = 0
+		FIN
+		sHorodatage est une chaîne = ""
 		// Le registre des composants du projet (le lanceur des seeders l'appelle) : lu dans app/Composants.owl. Déclaré avant le SI (voir plus haut).
 		sRegistre   est une chaîne = ""
 		sComposants est une chaîne = EbJointChemin(sLancement, "app\Composants.owl")
@@ -177,9 +187,12 @@ PRIVÉ
 					TableauAjoute(tabContenus, EbContenuFichierMigration(oSource, sHorodatage, sBase, i))
 				FIN
 			SINON
-				tabFichiers = EbFichiersRessource(oDemande)
-				POUR i = 1 À tabFichiers..Occurrence
-					TableauAjoute(tabContenus, EbContenuFichierRessource(oDemande, i))
+				tabTous = EbFichiersRessource(oDemande)
+				POUR i = 1 À tabTous..Occurrence
+					SI PAS (bAncien ET tabTous[i] = EbCheminCorps(oDemande)) ALORS
+						TableauAjoute(tabFichiers, tabTous[i])
+						TableauAjoute(tabContenus, EbContenuFichierRessource(oDemande, i))
+					FIN
 				FIN
 			FIN
 		FIN
@@ -250,16 +263,10 @@ PRIVÉ
 		SI PAS bMigration ET PAS bSeeder ET :oSysteme.DossierExiste(EbJointChemin(sLancement, "ebony")) ET PAS :oSysteme.FichierExiste(sCorps) ALORS
 			TableauAjoute(tabNotes, "La copie d'ebony/ de ce projet est plus ancienne que ce contrôleur (ebony/fabriques/cEbGenerateurCompteur.owl est absent) : il ne compilera pas. Supprimez le dossier ebony/ à la main, puis lancez « ebony restore ».")
 		FIN
-		// Un contrôleur conservé qui date d'avant le Poinçon ne lit pas ressource.json : ses anciens contrôles restent, et les règles de la description ne s'y appliquent pas. Ebony ne le remplace jamais : il le dit.
-		sControleur  est une chaîne = EbCheminRoutes(oDemande)
-		sTexteAncien est une chaîne = ""
-		SI PAS bMigration ET PAS bSeeder ET :oSysteme.FichierExiste(:Complet(sLancement, sControleur)) ALORS
-			sTexteAncien = :oSysteme.LitTexte(:Complet(sLancement, sControleur))
-		FIN
-		SI sTexteAncien <> "" ET Position(sTexteAncien, "EbPoinconDescription") = 0 ALORS
-			TableauAjoute(tabNotes, sControleur + " a été écrit avant le Poinçon : il ne lit pas ressource.json, donc ses « regles » et ses « defaut » ne s'y appliquent pas (il garde ses anciens contrôles). Pour l'adopter : copiez vos modifications ailleurs, supprimez ce fichier, relancez la même commande, puis reportez vos modifications.")
-		FIN
-		sCommande est une chaîne = "make resource"
+		// Un contrôleur conservé qui n'appelle pas EbPoinconValide (écrit avant la validation du corps brut) appelle des fonctions de contrôle retirées de la bibliothèque (structure à sentinelles, EbPoinconTexte…) : il ne compile plus avec la bibliothèque à jour. Ebony ne le remplace jamais : il le dit.
+		SI bAncien ET sTexteAncien <> "" ALORS
+			TableauAjoute(tabNotes, sControleur + " a été écrit avant la validation du corps brut : il appelle des fonctions de contrôle que la bibliothèque ne contient plus (EbPoinconTexte, EbTexteAbsent…) et ne compile pas avec la bibliothèque à jour, et ebony n'a PAS écrit " + EbCheminCorps(oDemande) + " à côté (ce contrôleur ne l'utilise pas). Pour adopter le nouveau contrôle : copiez vos modifications ailleurs, supprimez ce fichier, relancez la même commande, puis reportez vos modifications.")
+		FIN sCommande est une chaîne = "make resource"
 		SI bMigration ALORS
 			sCommande = "make migration"
 		FIN

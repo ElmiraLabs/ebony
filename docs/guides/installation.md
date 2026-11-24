@@ -46,7 +46,7 @@ ebony doctor
 
 Les commandes `ebony install` et `ebony uninstall` n'existent pas sous Linux : elles modifient le `PATH` par le registre de Windows et répondent par un refus (code 2). Pour retirer Ebony, supprimez le lien et le dossier cloné.
 
-Le parcours des [premiers pas](premiers-pas.md) fonctionne sous Linux avec le lanceur `bin/ebony`. La distribution testée est Ubuntu 26.04 (WSL 2) : voir [Ebony sous Linux](linux.md).
+Le parcours de création d'un projet fonctionne sous Linux avec le lanceur `bin/ebony`. La distribution testée est Ubuntu 26.04 (WSL 2) : voir [Ebony sous Linux](linux.md).
 
 ## Dans un projet cloné avec git
 

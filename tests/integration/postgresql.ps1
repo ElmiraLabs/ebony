@@ -254,7 +254,7 @@ try {
         Verifie "liste sur PostgreSQL : criteres mal formes, UN 400 qui les nomme (page, tri)" (($pgCriteresRefuses.Code -eq 400) -and $pgCriteresRefuses.Json -and ($pgCriteresRefuses.Json.message -match 'page') -and ($pgCriteresRefuses.Json.message -match 'tri')) ("code=" + $pgCriteresRefuses.Code + " " + $pgCriteresRefuses.Corps)
         Verifie "Bob est supprime (204) : la liste finale sera vide" ($pgSupprimeBob.Code -eq 204) ("code=" + $pgSupprimeBob.Code)
         Verifie "GET d'une cle absente : 404 { code: introuvable }" (($pgAbsent.Code -eq 404) -and $pgAbsent.Json -and ($pgAbsent.Json.code -eq 'introuvable')) ("code=" + $pgAbsent.Code + " " + $pgAbsent.Corps)
-        Verifie "POST d'un texte obligatoire vide : 400 { code: invalide }" (($pgInvalide.Code -eq 400) -and $pgInvalide.Json -and ($pgInvalide.Json.code -eq 'invalide')) ("code=" + $pgInvalide.Code + " " + $pgInvalide.Corps)
+        Verifie "POST d'un texte obligatoire vide : 422 { code: invalide }" (($pgInvalide.Code -eq 422) -and $pgInvalide.Json -and ($pgInvalide.Json.code -eq 'invalide')) ("code=" + $pgInvalide.Code + " " + $pgInvalide.Corps)
         Verifie "DELETE : 204, puis 404 la seconde fois" (($pgSupprime.Code -eq 204) -and ($pgSupprimeEncore.Code -eq 404)) ("codes=" + $pgSupprime.Code + "," + $pgSupprimeEncore.Code)
         Verifie "GET /api/clients : liste vide de nouveau" (($pgListeFinale.Code -eq 200) -and ($pgListeFinale.Corps -eq '{"donnees":[],"meta":{"total":0,"page":1,"limite":20,"pages":0}}')) ("code=" + $pgListeFinale.Code + " " + $pgListeFinale.Corps)
     }

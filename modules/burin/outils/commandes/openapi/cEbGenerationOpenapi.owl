@@ -215,13 +215,15 @@ PRIVÉ
 		oE.FermeObjet()
 	FIN
 
-	// La réponse d'erreur qu'un code HTTP désigne dans les composants (400, 401, 404, 409, 422, 503, 500).
+	// La réponse d'erreur qu'un code HTTP désigne dans les composants (400, 401, 404, 409, 415, 422, 503, 500).
 	PROCEDURE PRIVÉE NomReponseErreur(sCode est une chaîne) : chaîne
 		SELON sCode
 			CAS "400"
 			RENVOYER "RequeteInvalide"
 			CAS "422"
 			RENVOYER "DonneesInvalides"
+			CAS "415"
+			RENVOYER "TypeNonSupporte"
 			CAS "401"
 			RENVOYER "NonAutorise"
 			CAS "404"
@@ -395,7 +397,7 @@ PRIVÉ
 		:EcritCorps(oE, sNom + "Corps")
 		oE.OuvreObjet("responses")
 		:EcritReponseRessource(oE, "201", "La ligne créée, avec sa clé.", sNom)
-		:EcritErreurs(oE, "400,409,422,503,500", bJeton)
+		:EcritErreurs(oE, "400,409,415,422,503,500", bJeton)
 		oE.FermeObjet()
 		oE.FermeObjet()
 		oE.FermeObjet()
@@ -424,14 +426,14 @@ PRIVÉ
 		:EcritCorps(oE, sNom + "Corps")
 		oE.OuvreObjet("responses")
 		:EcritReponseRessource(oE, "200", "La ligne remplacée.", sNom)
-		:EcritErreurs(oE, "400,404,409,422,503,500", bJeton)
+		:EcritErreurs(oE, "400,404,409,415,422,503,500", bJeton)
 		oE.FermeObjet()
 		oE.FermeObjet()
 		:OuvreOperation(oE, "patch", "Corrige" + sNom, "Modifie certains champs d'une ligne de " + sNom, sNom)
 		:EcritCorps(oE, sNom + "Partiel")
 		oE.OuvreObjet("responses")
 		:EcritReponseRessource(oE, "200", "La ligne modifiée.", sNom)
-		:EcritErreurs(oE, "400,404,409,422,503,500", bJeton)
+		:EcritErreurs(oE, "400,404,409,415,422,503,500", bJeton)
 		oE.FermeObjet()
 		oE.FermeObjet()
 		:OuvreOperation(oE, "delete", "Supprime" + sNom, "Supprime une ligne de " + sNom, sNom)
@@ -497,10 +499,11 @@ PRIVÉ
 		oE.OuvreObjet("components")
 		oE.OuvreObjet("responses")
 		:EcritComposantErreur(oE, "RequeteInvalide", "Requête mal formée : un paramètre de l'adresse incorrect, ou un corps qui n'est pas du JSON.")
-		:EcritComposantErreur(oE, "DonneesInvalides", "Données invalides : un champ obligatoire absent, ou une valeur qui viole une règle de ressource.json (un seul message qui nomme tout).")
+		:EcritComposantErreur(oE, "DonneesInvalides", "Données invalides : un champ obligatoire absent, ou une valeur qui viole une règle de ressource.json (un seul message qui nomme tout, et la liste « erreurs » : une entrée par champ en faute).")
 		SI bJeton ALORS
 			:EcritComposantErreur(oE, "NonAutorise", "Jeton d'accès absent ou invalide.")
 		FIN
+		:EcritComposantErreur(oE, "TypeNonSupporte", "Le corps d'une écriture doit être envoyé en JSON : l'en-tête Content-Type doit être application/json (absent, il est accepté).")
 		:EcritComposantErreur(oE, "Introuvable", "La ligne demandée n'existe pas.")
 		:EcritComposantErreur(oE, "Conflit", "Conflit avec l'état des données : clé déjà prise, ou ligne liée à une autre table.")
 		:EcritComposantErreur(oE, "BaseIndisponible", "La base de données est indisponible.")
@@ -530,12 +533,27 @@ PRIVÉ
 		oE.EcritTexte("", "non_autorise")
 		oE.EcritTexte("", "introuvable")
 		oE.EcritTexte("", "conflit")
+		oE.EcritTexte("", "type_non_supporte")
 		oE.EcritTexte("", "base_indisponible")
 		oE.EcritTexte("", "erreur_interne")
 		oE.FermeTableau()
 		oE.FermeObjet()
 		oE.OuvreObjet("message")
 		oE.EcritTexte("type", "string")
+		oE.FermeObjet()
+		oE.OuvreObjet("erreurs")
+		oE.EcritTexte("type", "array")
+		oE.EcritTexte("description", "Présent pour une réponse 422 de la validation du corps : une entrée par champ en faute, dans l'ordre des champs de la ressource (champ : la clé JSON, regle : la règle violée, message : le message pour ce champ).")
+		oE.OuvreObjet("items")
+		oE.EcritTexte("type", "object")
+		oE.OuvreObjet("properties")
+		POUR TOUT sCleErreur DE ChaîneDécoupe("champ,regle,message", ",")
+			oE.OuvreObjet(sCleErreur)
+			oE.EcritTexte("type", "string")
+			oE.FermeObjet()
+		FIN
+		oE.FermeObjet()
+		oE.FermeObjet()
 		oE.FermeObjet()
 		oE.FermeObjet()
 		oE.FermeObjet()

@@ -1,0 +1,28 @@
+// Tests de cEbDetailErreur : le détail structuré d'un 422, posé par le Poinçon et repris une seule fois, pour le MÊME message seulement.
+
+// Sans rien posé, il n'y a pas de détail.
+PROCEDURE scenario_rien_de_pose()
+	dbgVérifieEgalité(cEbDetailErreur.Prend("n'importe quel message"), "", "aucun détail")
+FIN
+
+// Le détail posé est rendu pour son message, et une seule fois.
+PROCEDURE scenario_rendu_une_seule_fois()
+	cEbDetailErreur.Pose("Champ obligatoire absent : nom.", `[{"champ":"nom"}]`)
+	dbgVérifieEgalité(cEbDetailErreur.Prend("Champ obligatoire absent : nom."), `[{"champ":"nom"}]`, "rendu pour son message")
+	dbgVérifieEgalité(cEbDetailErreur.Prend("Champ obligatoire absent : nom."), "", "retiré après lecture")
+FIN
+
+// Un autre message ne reçoit pas le détail (un 422 levé à la main), et le détail posé reste pour son vrai message.
+PROCEDURE scenario_autre_message_sans_detail()
+	cEbDetailErreur.Pose("Message A", `[{"champ":"a"}]`)
+	dbgVérifieEgalité(cEbDetailErreur.Prend("Message B"), "", "un autre message : pas de détail")
+	dbgVérifieEgalité(cEbDetailErreur.Prend("Message A"), `[{"champ":"a"}]`, "le détail attend toujours son message")
+FIN
+
+// Poser un nouveau détail remplace l'ancien : le dernier 422 est celui qui compte.
+PROCEDURE scenario_pose_remplace()
+	cEbDetailErreur.Pose("Premier", `[{"champ":"un"}]`)
+	cEbDetailErreur.Pose("Second", `[{"champ":"deux"}]`)
+	dbgVérifieEgalité(cEbDetailErreur.Prend("Premier"), "", "le premier est remplacé")
+	dbgVérifieEgalité(cEbDetailErreur.Prend("Second"), `[{"champ":"deux"}]`, "le second est rendu")
+FIN

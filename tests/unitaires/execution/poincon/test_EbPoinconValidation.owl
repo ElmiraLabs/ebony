@@ -1,0 +1,333 @@
+// Tests de la validation d'un corps BRUT par un schéma en chaîne (EbPoinconValidation.owl) : les 400 (corps vide, pas du JSON, pas un objet), les 422 (absent, mauvais type, null, chaque règle, tout nommé d'un coup),
+// le mode partiel (PATCH), la liste d'erreurs, et l'objet typé rendu par EbPoinconValide. Aucune requête, aucun disque : le corps est un texte passé en argument.
+// La vraie route sous « owl serve » (corps reçu par MoiMême..Requête..Body) est prouvée par tests/integration/lanceur.ps1.
+
+// Le schéma d'un produit : trois champs obligatoires (nom, prix, actif), des défauts (stock, statut), des facultatifs (ref, sortie, maj), des règles de chaque sorte.
+PROCEDURE EbTestSchemaValidation(bAvecCible est un booléen) : cEbSchema
+	oSch est un cEbSchema
+	oSch.Texte("nom").LongueurMin(3).LongueurMax(10)
+	oSch.NombreReel("prix").Min(0)
+	oSch.NombreEntier("stock").Min(0).Max(100).Defaut("0")
+	oSch.Texte("statut").Valeurs("brouillon|publie").Defaut("brouillon")
+	oSch.Texte("ref").Motif("^[A-Z]{2}-[0-9]{3}$").Facultatif()
+	oSch.VraiFaux("actif")
+	oSch.DateIso("sortie").Facultatif()
+	oSch.DateHeureIso("maj").Facultatif()
+	SI bAvecCible ALORS
+		stCible est un stEbTestProduit
+		oSch.Cible(stCible)
+	FIN
+	RENVOYER oSch
+FIN
+
+// Rend « ok » si le corps est accepté, sinon « code|message » de l'exception levée.
+PROCEDURE EbTestVerifieValidation(sCorps est une chaîne, bPartiel est un booléen) : chaîne
+	sRes est une chaîne = "ok"
+	QUAND EXCEPTION DANS
+		EbPoinconVerifie(EbTestSchemaValidation(Faux), sCorps, bPartiel)
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Un corps complet et correct, pour partir d'une base valide.
+PROCEDURE EbTestCorpsBonValidation() : chaîne
+	RENVOYER `{"nom":"Cahier","prix":2.5,"stock":10,"statut":"publie","ref":"AB-123","actif":true,"sortie":"2026-02-28","maj":"2026-11-22T10:30:00Z"}`
+FIN
+
+// Un corps valide est accepté : complet, ou réduit aux seuls champs obligatoires (les défauts et les facultatifs peuvent manquer).
+PROCEDURE scenario_corps_valide_accepte()
+	dbgVérifieEgalité(EbTestVerifieValidation(EbTestCorpsBonValidation(), Faux), "ok", "corps complet")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":false}`, Faux), "ok", "seulement les obligatoires")
+	dbgVérifieEgalité(EbTestVerifieValidation(`
+		{"nom":"Cahier","prix":1,"actif":true}`, Faux), "ok", "espaces et sauts de ligne avant l'objet")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":true,"zzz":42}`, Faux), "ok", "un champ inconnu du schéma est ignoré")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"NOM":"Cahier","Prix":1,"ACTIF":true}`, Faux), "ok", "les clés ne distinguent pas la casse")
+FIN
+
+// Les bornes sont incluses : exactement la longueur minimale, la longueur maximale, le minimum et le maximum passent.
+PROCEDURE scenario_bornes_incluses()
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Abc","prix":0,"stock":0,"actif":true}`, Faux), "ok", "minimums exacts")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"ABCDEFGHIJ","prix":1,"stock":100,"actif":true}`, Faux), "ok", "maximums exacts")
+FIN
+
+// Un corps qui n'est pas un objet JSON est une requête mal formée : 400, avec un message en français.
+PROCEDURE scenario_corps_mal_forme_refuse_en_400()
+	dbgVérifieEgalité(EbTestVerifieValidation("", Faux), "400|Le corps de la requête est vide.", "vide")
+	dbgVérifieEgalité(EbTestVerifieValidation("   ", Faux), "400|Le corps de la requête est vide.", "espaces seuls")
+	dbgVérifieEgalité(EbTestVerifieValidation("abc", Faux), "400|Le corps de la requête n'est pas du JSON.", "pas du JSON")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cah`, Faux), "400|Le corps de la requête n'est pas du JSON.", "JSON tronqué")
+	dbgVérifieEgalité(EbTestVerifieValidation("null", Faux), "400|Le corps de la requête doit être un objet JSON.", "null")
+	dbgVérifieEgalité(EbTestVerifieValidation("[1,2]", Faux), "400|Le corps de la requête doit être un objet JSON.", "tableau")
+	dbgVérifieEgalité(EbTestVerifieValidation("42", Faux), "400|Le corps de la requête doit être un objet JSON.", "nombre")
+	dbgVérifieEgalité(EbTestVerifieValidation(`"abc"`, Faux), "400|Le corps de la requête doit être un objet JSON.", "texte JSON")
+FIN
+
+// Les champs obligatoires absents sont nommés ENSEMBLE, au pluriel ou au singulier.
+PROCEDURE scenario_champs_absents_nommes()
+	dbgVérifieEgalité(EbTestVerifieValidation("{}", Faux), "422|Champs obligatoires absents : nom, prix, actif.", "trois absents")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1}`, Faux), "422|Champ obligatoire absent : actif.", "un seul absent")
+FIN
+
+// Un mauvais type est VU (c'est le but du corps brut) : un texte numérique n'est pas un nombre, une décimale n'est pas un entier, 1 n'est pas un booléen, un objet n'est pas un texte.
+PROCEDURE scenario_mauvais_type_refuse()
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":"abc","actif":true}`, Faux), "422|Le champ « prix » doit être un nombre.", "texte pour un nombre")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":"12","actif":true}`, Faux), "422|Le champ « prix » doit être un nombre.", "« 12 » n'est pas un nombre")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"stock":2.7,"actif":true}`, Faux), "422|Le champ « stock » doit être un entier (sans décimale).", "décimale pour un entier")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"stock":5.0,"actif":true}`, Faux), "422|Le champ « stock » doit être un entier (sans décimale).", "5.0 est lu comme une décimale par OWL")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":"true"}`, Faux), "422|Le champ « actif » doit être vrai ou faux.", "texte pour un booléen")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":1}`, Faux), "422|Le champ « actif » doit être vrai ou faux.", "1 pour un booléen")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":42,"prix":1,"actif":true}`, Faux), "422|Le champ « nom » doit être un texte.", "nombre pour un texte")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":{"a":1},"prix":1,"actif":true}`, Faux), "422|Le champ « nom » doit être un texte.", "objet pour un texte")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":["a"],"prix":1,"actif":true}`, Faux), "422|Le champ « nom » doit être un texte.", "tableau pour un texte")
+FIN
+
+// null n'est permis que pour un champ Facultatif ; un champ muni d'un Defaut peut manquer mais ne peut pas valoir null.
+PROCEDURE scenario_null()
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":null,"prix":1,"actif":true}`, Faux), "422|Le champ « nom » ne peut pas être null.", "null sur un obligatoire")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":true,"stock":null}`, Faux), "422|Le champ « stock » ne peut pas être null.", "null sur un champ à défaut")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":true,"ref":null,"sortie":null,"maj":null}`, Faux), "ok", "null sur les facultatifs")
+FIN
+
+// Chaque règle du schéma produit son message.
+PROCEDURE scenario_regles()
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Ab","prix":1,"actif":true}`, Faux), "422|Le champ « nom » doit avoir au moins 3 caractères.", "longueurMin")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"ABCDEFGHIJK","prix":1,"actif":true}`, Faux), "422|Le champ « nom » dépasse 10 caractères.", "longueurMax")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":-1,"actif":true}`, Faux), "422|Le champ « prix » doit être supérieur ou égal à 0.", "min")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"stock":101,"actif":true}`, Faux), "422|Le champ « stock » doit être inférieur ou égal à 100.", "max")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"statut":"zzz","actif":true}`, Faux), "422|Le champ « statut » doit valoir l'une de ces valeurs : brouillon, publie.", "valeurs d'un texte")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"ref":"ab-1","actif":true}`, Faux), "422|Le champ « ref » n'a pas la forme attendue.", "motif")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"ref":"AB-123X","actif":true}`, Faux), "422|Le champ « ref » n'a pas la forme attendue.", "motif ancré à la fin")
+FIN
+
+// Les valeurs permises d'un entier.
+PROCEDURE scenario_valeurs_d_un_entier()
+	oSch est un cEbSchema
+	oSch.NombreEntier("niveau").Valeurs("1|2|3")
+	jOk est un JSON = ChaîneVersJSON(`{"niveau":2}`)
+	jKo est un JSON = ChaîneVersJSON(`{"niveau":4}`)
+	dbgVérifieEgalité(EbPoinconErreurs(oSch, jOk, Faux)..Occurrence, 0, "2 est permis")
+	tabErreurs est un tableau de cEbErreurValidation = EbPoinconErreurs(oSch, jKo, Faux)
+	dbgVérifieEgalité(tabErreurs..Occurrence, 1, "4 n'est pas permis")
+	dbgVérifieEgalité(tabErreurs[1].Message(), "Le champ « niveau » doit valoir l'une de ces valeurs : 1, 2, 3. ", "message")
+FIN
+
+// Les dates ISO : le format ET l'existence au calendrier.
+PROCEDURE scenario_dates()
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":true,"sortie":"2026-02-30"}`, Faux), "422|Le champ « sortie » doit être une date au format AAAA-MM-JJ.", "30 février")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":true,"sortie":"2028-02-29"}`, Faux), "ok", "29 février d'une année bissextile")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":true,"sortie":20260228}`, Faux), "422|Le champ « sortie » doit être un texte.", "date écrite en nombre")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":true,"maj":"2026-11-22T25:00:00"}`, Faux), "422|Le champ « maj » doit être une date et une heure au format AAAA-MM-JJTHH:MM:SS.", "25 h")
+FIN
+
+// UNE seule réponse nomme tout : les absents d'abord, puis les autres erreurs, dans l'ordre des champs du schéma.
+PROCEDURE scenario_tout_est_nomme_en_une_fois()
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Ab","prix":"abc","stock":500,"statut":"zzz"}`, Faux), "422|Champ obligatoire absent : actif. Le champ « nom » doit avoir au moins 3 caractères. Le champ « prix » doit être un nombre. Le champ « stock » doit être inférieur ou égal à 100. Le champ « statut » doit valoir l'une de ces valeurs : brouillon, publie.", "cumul")
+FIN
+
+// Le mode partiel (PATCH) : un champ absent n'est pas une erreur, mais un champ présent est contrôlé comme d'habitude, null compris.
+PROCEDURE scenario_mode_partiel()
+	dbgVérifieEgalité(EbTestVerifieValidation("{}", Vrai), "ok", "rien envoyé")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"prix":3}`, Vrai), "ok", "un champ valide")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"prix":-5}`, Vrai), "422|Le champ « prix » doit être supérieur ou égal à 0.", "un champ invalide")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"stock":"x"}`, Vrai), "422|Le champ « stock » doit être un nombre.", "mauvais type")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":null}`, Vrai), "422|Le champ « nom » ne peut pas être null.", "null sur un obligatoire")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"ref":null}`, Vrai), "ok", "null sur un facultatif")
+	dbgVérifieEgalité(EbTestVerifieValidation("[1]", Vrai), "400|Le corps de la requête doit être un objet JSON.", "un tableau reste un 400")
+FIN
+
+// EbPoinconErreurs rend la liste (champ, règle, message) sans rien lever, dans l'ordre des champs du schéma.
+PROCEDURE scenario_liste_des_erreurs()
+	jCorps     est un JSON                           = ChaîneVersJSON(`{"nom":"Ab","prix":-1,"actif":"oui"}`)
+	tabErreurs est un tableau de cEbErreurValidation = EbPoinconErreurs(EbTestSchemaValidation(Faux), jCorps, Faux)
+	dbgVérifieEgalité(tabErreurs..Occurrence, 3, "trois erreurs")
+	dbgVérifieEgalité(tabErreurs[1].Champ(), "nom", "champ 1")
+	dbgVérifieEgalité(tabErreurs[1].Regle(), "longueurMin", "règle 1")
+	dbgVérifieEgalité(tabErreurs[2].Champ(), "prix", "champ 2")
+	dbgVérifieEgalité(tabErreurs[2].Regle(), "min", "règle 2")
+	dbgVérifieEgalité(tabErreurs[3].Champ(), "actif", "champ 3")
+	dbgVérifieEgalité(tabErreurs[3].Regle(), "type-booleen", "règle 3")
+	dbgVérifieEgalité(tabErreurs[3].Message(), "Le champ « actif » doit être vrai ou faux. ", "message 3")
+	jBon est un JSON = ChaîneVersJSON(EbTestCorpsBonValidation())
+	dbgVérifieEgalité(EbPoinconErreurs(EbTestSchemaValidation(Faux), jBon, Faux)..Occurrence, 0, "un corps valide n'a aucune erreur")
+FIN
+
+// EbPoinconValide rend l'objet du type de la cible, rempli depuis le corps.
+PROCEDURE scenario_valide_rend_l_objet_type()
+	stOk est un stEbTestProduit = EbPoinconValide(EbTestSchemaValidation(Vrai), EbTestCorpsBonValidation(), Faux)
+	dbgVérifieEgalité(stOk.Nom, "Cahier", "nom")
+	dbgVérifieEgalité(stOk.Prix, 2.5, "prix")
+	dbgVérifieEgalité(stOk.Prix + 1, 3.5, "le prix est un vrai réel")
+	dbgVérifieEgalité(stOk.Stock, 10, "stock")
+	dbgVérifieEgalité(stOk.Statut, "publie", "statut")
+	dbgVérifieEgalité(stOk.Ref, "AB-123", "ref")
+	dbgVérifieVrai(stOk.Actif, "actif")
+	dbgVérifieEgalité(stOk.Sortie, "2026-02-28", "sortie")
+FIN
+
+// Un champ absent muni d'un Defaut reçoit ce défaut ; un champ facultatif absent ou null donne la valeur par défaut du type (0, texte vide, faux).
+PROCEDURE scenario_valide_absents_et_null_valent_le_defaut_du_type()
+	stRes est un stEbTestProduit = EbPoinconValide(EbTestSchemaValidation(Vrai), `{"nom":"Cahier","prix":1,"actif":false,"ref":null}`, Faux)
+	dbgVérifieEgalité(stRes.Stock, 0, "stock absent : le Defaut « 0 »")
+	dbgVérifieEgalité(stRes.Statut, "brouillon", "statut absent : le Defaut « brouillon »")
+	dbgVérifieEgalité(stRes.Sortie, "", "sortie absente et facultative : le texte vide")
+	dbgVérifieEgalité(stRes.Ref, "", "ref null")
+	dbgVérifieEgalité(Taille(stRes.Ref), 0, "ref de taille 0")
+	dbgVérifieEgalité(stRes.Actif, Faux, "actif faux")
+FIN
+
+// En mode partiel, les champs absents valent le défaut du type : pour savoir ce qui a VRAIMENT été envoyé, on interroge le corps brut (JSONExiste), ce que fera la fusion du PATCH.
+PROCEDURE scenario_valide_partiel()
+	sCorps est une chaîne         = `{"prix":0}`
+	stRes  est un stEbTestProduit = EbPoinconValide(EbTestSchemaValidation(Vrai), sCorps, Vrai)
+	dbgVérifieEgalité(stRes.Prix, 0, "prix envoyé")
+	dbgVérifieEgalité(stRes.Nom, "", "nom non envoyé")
+	dbgVérifieEgalité(stRes.Statut, "", "statut non envoyé : un PATCH n'applique aucun Defaut")
+	jCorps est un JSON = ChaîneVersJSON(sCorps)
+	dbgVérifieVrai(JSONExiste(jCorps, "prix"), "prix présent dans le corps")
+	dbgVérifieVrai(PAS JSONExiste(jCorps, "nom"), "nom absent du corps")
+FIN
+
+// Un corps invalide ne rend aucun objet : l'exception est levée avant, avec le même code et le même message que EbPoinconVerifie.
+PROCEDURE scenario_valide_refuse_un_corps_invalide()
+	sRes est une chaîne = "aucune exception"
+	QUAND EXCEPTION DANS
+		stKo est un stEbTestProduit = EbPoinconValide(EbTestSchemaValidation(Vrai), `{"nom":"Ab","prix":"abc","actif":true}`, Faux)
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	dbgVérifieEgalité(sRes, "422|Le champ « nom » doit avoir au moins 3 caractères. Le champ « prix » doit être un nombre.", "422 avec les deux erreurs")
+FIN
+
+// Un schéma sans cible ne peut pas rendre d'objet : c'est une faute du programmeur (500), pas du client.
+PROCEDURE scenario_valide_sans_cible_leve_500()
+	sRes est une chaîne = "aucune exception"
+	QUAND EXCEPTION DANS
+		stKo est un stEbTestProduit = EbPoinconValide(EbTestSchemaValidation(Faux), EbTestCorpsBonValidation(), Faux)
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	dbgVérifieEgalité(Gauche(sRes, 4), "500|", "code 500")
+	dbgVérifieVrai(Position(sRes, "pas de cible") > 0, "dit ce qui manque")
+FIN
+
+// Les messages par défaut sont tous dans EbValidationMessage : une règle inconnue a un message de repli.
+PROCEDURE scenario_messages_par_defaut()
+	dbgVérifieEgalité(EbValidationMessage("absent", "nom", ""), "Le champ « nom » est obligatoire. ", "absent")
+	dbgVérifieEgalité(EbValidationMessage("null", "nom", ""), "Le champ « nom » ne peut pas être null. ", "null")
+	dbgVérifieEgalité(EbValidationMessage("type-nombre", "prix", ""), "Le champ « prix » doit être un nombre. ", "type nombre")
+	dbgVérifieEgalité(EbValidationMessage("zzz", "nom", ""), "Le champ « nom » est incorrect. ", "règle inconnue")
+FIN
+
+// Un Defaut est appliqué à tout champ absent, avec le bon type : un entier, un réel, un booléen, un texte, une date.
+PROCEDURE scenario_valide_applique_les_defauts_types()
+	oSch est un cEbSchema
+	oSch.Texte("nom")
+	oSch.NombreEntier("stock").Defaut("5")
+	oSch.NombreReel("prix").Defaut("1.5")
+	oSch.VraiFaux("actif").Defaut("true")
+	oSch.Texte("statut").Defaut("brouillon")
+	oSch.DateIso("sortie").Defaut("2026-01-31")
+	stCible est un stEbTestProduit
+	oSch.Cible(stCible)
+	stRes est un stEbTestProduit = EbPoinconValide(oSch, `{"nom":"Cahier"}`, Faux)
+	dbgVérifieEgalité(stRes.Stock, 5, "entier par défaut")
+	dbgVérifieEgalité(stRes.Prix, 1.5, "réel par défaut")
+	dbgVérifieVrai(stRes.Actif, "booléen par défaut")
+	dbgVérifieEgalité(stRes.Statut, "brouillon", "texte par défaut")
+	dbgVérifieEgalité(stRes.Sortie, "2026-01-31", "date par défaut")
+	stEnvoye est un stEbTestProduit = EbPoinconValide(oSch, `{"nom":"Cahier","stock":0,"prix":0,"actif":false,"statut":"publie"}`, Faux)
+	dbgVérifieEgalité(stEnvoye.Stock, 0, "zéro envoyé : une valeur, pas une absence")
+	dbgVérifieEgalité(stEnvoye.Prix, 0, "zéro réel envoyé")
+	dbgVérifieEgalité(stEnvoye.Actif, Faux, "faux envoyé")
+	dbgVérifieEgalité(stEnvoye.Statut, "publie", "texte envoyé")
+FIN
+
+// Un texte vide (ou d'espaces) n'est pas une valeur pour un champ obligatoire ; il est permis pour un champ facultatif ou muni d'un Defaut, et alors aucune autre règle ne s'applique.
+PROCEDURE scenario_texte_vide()
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"  ","prix":1,"actif":true}`, Faux), "422|Le champ « nom » ne peut pas être vide.", "nom d'espaces")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"","prix":1,"actif":true}`, Faux), "422|Le champ « nom » ne peut pas être vide.", "nom vide : une seule erreur, pas aussi « au moins 3 caractères »")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":true,"ref":""}`, Faux), "ok", "vide permis pour un facultatif (le motif ne s'applique pas)")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"Cahier","prix":1,"actif":true,"statut":""}`, Faux), "ok", "vide permis pour un champ à défaut (les valeurs permises ne s'appliquent pas)")
+	dbgVérifieEgalité(EbTestVerifieValidation(`{"nom":"  "}`, Vrai), "422|Le champ « nom » ne peut pas être vide.", "même en mode partiel")
+FIN
+
+// Le détail structuré : une entrée par erreur, dans l'ordre des champs du schéma, avec le champ, la règle et le message sans l'espace final.
+PROCEDURE scenario_detail_structure_des_erreurs()
+	oSch       est un cEbSchema                      = EbTestSchemaValidation(Faux)
+	jCorps     est un JSON                           = ChaîneVersJSON(`{"nom":"Ab","prix":"abc","actif":true}`)
+	tabErreurs est un tableau de cEbErreurValidation = EbPoinconErreurs(oSch, jCorps, Faux)
+	sDetail    est une chaîne                        = EbValidationDetail(tabErreurs)
+	dbgVérifieVrai(JSONValide(sDetail), "le détail est du JSON valide")
+	jDetail est un JSON = ChaîneVersJSON(sDetail)
+	dbgVérifieEgalité(jDetail..Occurrence, 2, "deux champs en faute")
+	dbgVérifieEgalité(jDetail[1]["champ"], "nom", "premier champ")
+	dbgVérifieEgalité(jDetail[1]["regle"], "longueurMin", "première règle")
+	dbgVérifieEgalité(jDetail[1]["message"], "Le champ « nom » doit avoir au moins 3 caractères.", "message sans espace final")
+	dbgVérifieEgalité(jDetail[2]["champ"], "prix", "second champ")
+	dbgVérifieEgalité(jDetail[2]["regle"], "type-nombre", "seconde règle")
+	dbgVérifieEgalité(EbValidationDetail(EbPoinconErreurs(oSch, ChaîneVersJSON(`{"nom":"Cahier","prix":1,"actif":true}`), Faux)), "[]", "aucune erreur : tableau vide")
+FIN
+
+// Le trajet complet : un corps invalide lève un 422 au texte simple, et la réponse HTTP construite avec ce texte porte aussi « erreurs ». Un message d'un autre 422 ne reçoit rien.
+PROCEDURE scenario_reponse_422_avec_detail()
+	sMessage est une chaîne = ""
+	QUAND EXCEPTION DANS
+		EbPoinconVerifie(EbTestSchemaValidation(Faux), `{"prix":-1}`, Faux)
+	FAIRE
+		sMessage = ExceptionInfo(errMessage)
+	FIN
+	dbgVérifieVrai(Position(sMessage, "Champs obligatoires absents : nom, actif.") = 1, "le message de l'exception reste du texte simple")
+	dbgVérifieEgalité(Position(sMessage, "erreurs"), 0, "aucun JSON dans le message")
+	sCorps est une chaîne = EbCorpsErreurHttp("422", sMessage)
+	jCorps est un JSON    = ChaîneVersJSON(sCorps)
+	dbgVérifieEgalité(jCorps["code"], "invalide", "code")
+	dbgVérifieEgalité(jCorps["message"], sMessage, "le message est le texte simple")
+	dbgVérifieEgalité(jCorps["erreurs"]..Occurrence, 3, "trois erreurs : nom et actif absents, prix trop petit")
+	dbgVérifieEgalité(jCorps["erreurs"][1]["champ"], "nom", "nom en premier")
+	dbgVérifieEgalité(jCorps["erreurs"][1]["regle"], "absent", "règle absent")
+	dbgVérifieEgalité(jCorps["erreurs"][2]["champ"], "prix", "puis prix, dans l'ordre des champs du schéma (le message, lui, groupe les absents)")
+	dbgVérifieEgalité(jCorps["erreurs"][2]["regle"], "min", "prix : borne minimale")
+	dbgVérifieEgalité(jCorps["erreurs"][3]["champ"], "actif", "actif en dernier")
+	dbgVérifieEgalité(jCorps["erreurs"][3]["regle"], "absent", "actif : absent")
+	dbgVérifieEgalité(EbCorpsErreurHttp("422", "Une règle métier : stock insuffisant."), `{"code":"invalide","message":"Une règle métier : stock insuffisant."}`, "un 422 levé à la main : pas d'erreurs")
+FIN
+
+// Rend « ok » si le type de contenu est accepté, sinon « code|message » de l'exception levée.
+PROCEDURE EbTestExigeJson(sType est une chaîne) : chaîne
+	sRes est une chaîne = "ok"
+	QUAND EXCEPTION DANS
+		EbPoinconExigeJson(sType)
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// Du JSON : application/json, ses paramètres et sa casse, et un type « application/<x>+json ».
+PROCEDURE scenario_type_json_reconnu()
+	dbgVérifieVrai(EbPoinconTypeJson("application/json"), "application/json")
+	dbgVérifieVrai(EbPoinconTypeJson("application/json; charset=utf-8"), "avec un paramètre")
+	dbgVérifieVrai(EbPoinconTypeJson("Application/JSON"), "la casse est ignorée")
+	dbgVérifieVrai(EbPoinconTypeJson("  application/json ;charset=UTF-8"), "les espaces sont ignorés")
+	dbgVérifieVrai(EbPoinconTypeJson("application/merge-patch+json"), "un type +json")
+	dbgVérifieVrai(EbPoinconTypeJson("application/vnd.api+json; charset=utf-8"), "un type +json avec un paramètre")
+	dbgVérifieFaux(EbPoinconTypeJson("text/plain"), "text/plain")
+	dbgVérifieFaux(EbPoinconTypeJson("application/x-www-form-urlencoded"), "un formulaire")
+	dbgVérifieFaux(EbPoinconTypeJson("application/xml"), "xml")
+	dbgVérifieFaux(EbPoinconTypeJson("application/+json"), "un sous-type vide n'est pas du JSON")
+	dbgVérifieFaux(EbPoinconTypeJson("text/json"), "text/json n'est pas annoncé comme application/json")
+FIN
+
+// Un type de contenu absent ou vide est accepté (comme le faisait OWL) ; un type JSON aussi ; tout autre type explicite est refusé en 415, sans citer le type reçu.
+PROCEDURE scenario_exige_json()
+	dbgVérifieEgalité(EbTestExigeJson(Null), "ok", "en-tête absent (Null)")
+	dbgVérifieEgalité(EbTestExigeJson(""), "ok", "en-tête vide")
+	dbgVérifieEgalité(EbTestExigeJson("   "), "ok", "espaces seuls")
+	dbgVérifieEgalité(EbTestExigeJson("application/json"), "ok", "JSON")
+	dbgVérifieEgalité(EbTestExigeJson("application/json; charset=utf-8"), "ok", "JSON avec un paramètre")
+	dbgVérifieEgalité(EbTestExigeJson("text/plain"), "415|Le corps doit être envoyé en JSON : l'en-tête Content-Type doit être application/json.", "text/plain refusé")
+	dbgVérifieEgalité(Gauche(EbTestExigeJson("application/x-www-form-urlencoded"), 4), "415|", "formulaire refusé : ce que « curl -d » envoie sans -H")
+	dbgVérifieEgalité(Position(EbTestExigeJson("text/x-secret-12345"), "secret"), 0, "le type reçu n'est pas répété dans le message")
+FIN

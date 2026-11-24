@@ -105,8 +105,6 @@ curl.exe -s -H "Authorization: Bearer eb_…" http://127.0.0.1:8080/api/produits
 curl.exe -s -i http://127.0.0.1:8080/api/produits                                  # 401, sans jeton
 ```
 
-La suite est celle des [premiers pas](premiers-pas.md) : les couches sont décrites dans [le chemin d'une requête](architecture.md).
-
 ## Ajouter un module plus tard
 
 Vous pouvez adopter Ebony sans base de données et en ajouter une ensuite, **sans toucher à votre service** : `ebony init --kit slim` écrit un registre vide, que le service appelle déjà.

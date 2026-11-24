@@ -48,7 +48,7 @@ Après `ebony migrate`, `GET /api/health` répond `{"statut":"ok","base":"ok"}`.
 
 - **La bibliothèque du module**, dans `ebony/`, puis le module dans la liste `modules` de [`ebony.conf`](ebony-conf.md). `ebony.conf` est écrit en dernier : le module n'y figure que quand l'ajout est terminé.
 - **Les fichiers et migrations que le module déclare** (la migration des jetons, par exemple), sans jamais écraser un fichier qui existe.
-- **Les fichiers qu'Ebony gère** : `config/env.json`, `.env.exemple`, `.env.secrets.exemple` (les variables du module) et `app/Composants.owl` (le registre des composants : voir [la structure](structure.md)).
+- **Les fichiers qu'Ebony gère** : `config/env.json`, `.env.exemple`, `.env.secrets.exemple` (les variables du module) et `app/Composants.owl` (le registre des composants).
 
 **Votre service n'est jamais modifié.** Il appelle le registre `app/Composants.owl` au démarrage, donc ajouter un module ne le change pas.
 

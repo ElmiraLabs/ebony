@@ -8,7 +8,7 @@ Ebony apporte à OWL ce que les frameworks apportent à leur langage : une faço
 
 Le dépôt `ElmiraLabs/ebony` est le cœur : la commande `ebony`, les générateurs et la petite bibliothèque d'exécution (`Eb*`) que chaque projet généré embarque.
 
-Quelques commandes suffisent pour obtenir une API qui tourne. Pour une table, `ebony make` écrit l'entité, le repository, le service, le contrôleur REST et les tests. Le [parcours des premiers pas](/guides/premiers-pas) montre chaque étape.
+Quelques commandes suffisent pour obtenir une API qui tourne. Pour une table, `ebony make` écrit l'entité, le repository, le service, le contrôleur REST et les tests.
 
 Le code généré est du code OWL ordinaire, dans votre projet : vous le lisez, vous le modifiez, et il reste à vous.
 
@@ -22,10 +22,10 @@ Aujourd'hui, le framework sert à faire des API REST. Les applications web et de
 
 ## Par où commencer
 
-1. [Premiers pas](/guides/premiers-pas) : installer, créer un projet et lancer une première API.
-2. [Tutoriel](/guides/tutoriel) : construire une petite boutique, étape par étape.
-3. [Structure d'un projet](/guides/structure) et [code généré](/guides/code-genere) : comprendre les fichiers.
-4. [Référence des commandes](/guides/commandes) : toutes les commandes et leurs options.
+1. [Installation](/guides/installation) : installer Ebony, après OWL.
+2. [Référence des commandes](/guides/commandes) : toutes les commandes.
+3. [Modules et kits](/guides/modules) : ce que contient un projet.
+4. [La feuille de route](https://github.com/ElmiraLabs/ebony/blob/main/ROADMAP.md) : ce qui arrive.
 
 ## L'écosystème
 

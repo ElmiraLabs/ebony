@@ -25,4 +25,4 @@ Un corps très gros (de l'ordre de 20 Mo) est refusé en `413` par défaut.
 
 ## Erreurs
 
-Une exception non gérée dans une route donne un `500` et une trace dans le journal. Le service continue de servir les autres requêtes. Voir [les erreurs](erreurs.md).
+Une exception non gérée dans une route donne un `500` et une trace dans le journal. Le service continue de servir les autres requêtes.

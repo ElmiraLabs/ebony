@@ -1,6 +1,6 @@
 # Ebony sous Linux
 
-Le parcours des [premiers pas](premiers-pas.md) (`new`, `make`, `migrate`, `token`, `owl serve`, `curl`) fonctionne sous Linux avec le lanceur `bin/ebony`.
+Le parcours de création d'un projet (`new`, `make`, `migrate`, `token`, `owl serve`, `curl`) fonctionne sous Linux avec le lanceur `bin/ebony`.
 
 > Testé sous Ubuntu 26.04 (WSL 2). Versions prises en charge : voir la [compatibilité](/guides/compatibilite).
 

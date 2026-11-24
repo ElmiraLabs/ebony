@@ -1,0 +1,256 @@
+// Le schéma d'un corps de requête, écrit en chaîne. Chaque méthode rend le schéma : on enchaîne.
+//   oSch est un cEbSchema
+//   oSch.Texte("nom").LongueurMin(3).LongueurMax(10)
+//   oSch.NombreReel("prix").Min(0)
+//   oSch.NombreEntier("stock").Min(0).Max(100).Defaut("0")
+//   oSch.Texte("ref").Motif("^[A-Z]{2}-[0-9]{3}$").Facultatif()
+//   stModele est un stProduit
+//   oSch.Cible(stModele)            // seul le type de la variable compte
+// Types : Texte, NombreEntier, NombreReel, VraiFaux, DateIso, DateHeureIso. Règles, par type : texte (LongueurMin, LongueurMax, Valeurs, Motif) ; NombreEntier (Min, Max, Valeurs) ; NombreReel (Min, Max).
+// Un champ est obligatoire sauf s'il est Facultatif() (peut manquer ou valoir null) ou muni d'un Defaut() (peut manquer). Valeurs("a|b") sépare par « | » : une valeur ne peut donc pas contenir « | ».
+// « Motif » est une expression régulière NON ANCRÉE : écrivez ^ et $ pour viser tout le texte.
+// UN SCHÉMA FAUTIF EST REFUSÉ À LA CONSTRUCTION (exception 500 qui nomme le champ et la règle) : règle sans champ, règle d'un autre type, nom en double, bornes à l'envers, défaut du mauvais type.
+// Le schéma ne valide rien : c'est EbPoinconValide / EbPoinconVerifie / EbPoinconErreurs (EbPoinconValidation.owl) qui le lisent. Le schéma d'une ressource est construit depuis ressource.json par EbSchemaDeRessource (EbPoinconRessource.owl) : le fichier est la source, le schéma n'est jamais réécrit en fichier.
+cEbSchema est une Classe
+PRIVÉ
+	tabNoms    est un tableau de chaînes
+	tabTypes   est un tableau de chaînes
+	tabNombres est un tableau associatif
+	tabTextes  est un tableau associatif
+	tabAbsence est un tableau associatif
+	tabModele  est un tableau associatif
+	sDernier   est une chaîne            = ""
+
+	// Un schéma fautif lève 500 : c'est une erreur du programmeur, jamais du client.
+	PROCEDURE Refuse(sMessage est une chaîne)
+		ExceptionDéclenche(500, "Poinçon : " + sMessage)
+	FIN
+
+	PROCEDURE Ajoute(sNom est une chaîne, sType est une chaîne)
+		SI SansEspace(sNom) = "" ALORS
+			:Refuse("le nom d'un champ ne peut pas être vide.")
+		FIN
+		SI TableauCherche(:tabNoms, sNom) >= 1 ALORS
+			:Refuse("le champ « " + sNom + " » est déclaré deux fois.")
+		FIN
+		TableauAjoute(:tabNoms, sNom)
+		TableauAjoute(:tabTypes, sType)
+		:sDernier = sNom
+	FIN
+
+	// Le champ auquel s'applique une règle : le dernier déclaré.
+	PROCEDURE ExigeChamp(sRegle est une chaîne)
+		SI :sDernier = "" ALORS
+			:Refuse("la règle « " + sRegle + " » n'a pas de champ : déclarez d'abord le champ (Texte, Entier…).")
+		FIN
+	FIN
+
+	PROCEDURE ExigeType(sRegle est une chaîne, sTypeA est une chaîne, sTypeB est une chaîne)
+		:ExigeChamp(sRegle)
+		sType est une chaîne = :TypeDe(:sDernier)
+		SI sType <> sTypeA ET sType <> sTypeB ALORS
+			:Refuse("la règle « " + sRegle + " » ne s'applique pas au champ « " + :sDernier + " » (type " + sType + ").")
+		FIN
+	FIN
+
+	PROCEDURE PUBLIQUE Texte(sNom est une chaîne) : cEbSchema
+		:Ajoute(sNom, "texte")
+		RENVOYER objet
+	FIN
+
+	PROCEDURE PUBLIQUE NombreEntier(sNom est une chaîne) : cEbSchema
+		:Ajoute(sNom, "entier")
+		RENVOYER objet
+	FIN
+
+	PROCEDURE PUBLIQUE NombreReel(sNom est une chaîne) : cEbSchema
+		:Ajoute(sNom, "reel")
+		RENVOYER objet
+	FIN
+
+	PROCEDURE PUBLIQUE VraiFaux(sNom est une chaîne) : cEbSchema
+		:Ajoute(sNom, "booleen")
+		RENVOYER objet
+	FIN
+
+	PROCEDURE PUBLIQUE DateIso(sNom est une chaîne) : cEbSchema
+		:Ajoute(sNom, "date")
+		RENVOYER objet
+	FIN
+
+	PROCEDURE PUBLIQUE DateHeureIso(sNom est une chaîne) : cEbSchema
+		:Ajoute(sNom, "dateheure")
+		RENVOYER objet
+	FIN
+
+	// Déclare un champ dont le type est donné par son NOM (« texte », « entier », « reel », « booleen », « date », « dateheure ») : pour construire un schéma depuis une description (EbSchemaDeRessource).
+	PROCEDURE PUBLIQUE Champ(sNom est une chaîne, sType est une chaîne) : cEbSchema
+		SI Position("|texte|entier|reel|booleen|date|dateheure|", "|" + sType + "|") < 1 ALORS
+			:Refuse("le type « " + sType + " » du champ « " + sNom + " » est inconnu.")
+		FIN
+		:Ajoute(sNom, sType)
+		RENVOYER objet
+	FIN
+
+	PROCEDURE PUBLIQUE LongueurMin(nLongueur est un entier) : cEbSchema
+		:ExigeType("longueurMin", "texte", "texte")
+		SI nLongueur < 0 ALORS
+			:Refuse("« longueurMin » du champ « " + :sDernier + " » ne peut pas être négatif.")
+		FIN
+		SI :ARegle(:sDernier, "longueurMax") ET nLongueur > :Regle(:sDernier, "longueurMax") ALORS
+			:Refuse("« longueurMin » dépasse « longueurMax » pour le champ « " + :sDernier + " ».")
+		FIN
+		:tabNombres[:sDernier + ".longueurMin"] = nLongueur
+		RENVOYER objet
+	FIN
+
+	PROCEDURE PUBLIQUE LongueurMax(nLongueur est un entier) : cEbSchema
+		:ExigeType("longueurMax", "texte", "texte")
+		SI nLongueur < 0 ALORS
+			:Refuse("« longueurMax » du champ « " + :sDernier + " » ne peut pas être négatif.")
+		FIN
+		SI :ARegle(:sDernier, "longueurMin") ET nLongueur < :Regle(:sDernier, "longueurMin") ALORS
+			:Refuse("« longueurMin » dépasse « longueurMax » pour le champ « " + :sDernier + " ».")
+		FIN
+		:tabNombres[:sDernier + ".longueurMax"] = nLongueur
+		RENVOYER objet
+	FIN
+
+	PROCEDURE PUBLIQUE Min(rBorne est un réel) : cEbSchema
+		:ExigeType("min", "entier", "reel")
+		SI :ARegle(:sDernier, "max") ET rBorne > :Regle(:sDernier, "max") ALORS
+			:Refuse("« min » dépasse « max » pour le champ « " + :sDernier + " ».")
+		FIN
+		:tabNombres[:sDernier + ".min"] = rBorne
+		RENVOYER objet
+	FIN
+
+	PROCEDURE PUBLIQUE Max(rBorne est un réel) : cEbSchema
+		:ExigeType("max", "entier", "reel")
+		SI :ARegle(:sDernier, "min") ET rBorne < :Regle(:sDernier, "min") ALORS
+			:Refuse("« min » dépasse « max » pour le champ « " + :sDernier + " ».")
+		FIN
+		:tabNombres[:sDernier + ".max"] = rBorne
+		RENVOYER objet
+	FIN
+
+	// Les valeurs permises, séparées par « | » : Valeurs("brouillon|publie") pour un texte, Valeurs("1|2|3") pour un entier.
+	PROCEDURE PUBLIQUE Valeurs(sListe est une chaîne) : cEbSchema
+		:ExigeType("valeurs", "texte", "entier")
+		SI SansEspace(sListe) = "" ALORS
+			:Refuse("« valeurs » du champ « " + :sDernier + " » est vide.")
+		FIN
+		SI :TypeDe(:sDernier) = "entier" ET PAS RegexVérifie(sListe, "^-?[0-9]+(\|-?[0-9]+)*$") ALORS
+			:Refuse("« valeurs » du champ « " + :sDernier + " » doit être une liste d'entiers séparés par « | ».")
+		FIN
+		:tabTextes[:sDernier + ".valeurs"] = "|" + sListe + "|"
+		RENVOYER objet
+	FIN
+
+	PROCEDURE PUBLIQUE Motif(sMotif est une chaîne) : cEbSchema
+		:ExigeType("motif", "texte", "texte")
+		SI sMotif = "" ALORS
+			:Refuse("« motif » du champ « " + :sDernier + " » est vide.")
+		FIN
+		:tabTextes[:sDernier + ".motif"] = sMotif
+		RENVOYER objet
+	FIN
+
+	// Le champ peut manquer ou valoir null (le code qui reçoit l'objet voit alors la valeur par défaut du type).
+	PROCEDURE PUBLIQUE Facultatif() : cEbSchema
+		:ExigeChamp("facultatif")
+		:tabAbsence[:sDernier] = "facultatif"
+		RENVOYER objet
+	FIN
+
+	// Le champ peut manquer ; la valeur écrite ici est celle que décrit ressource.json (« defaut »). La valeur doit être du type du champ : « 0 », « true », « brouillon », « 2026-01-31 ».
+	PROCEDURE PUBLIQUE Defaut(sValeur est une chaîne) : cEbSchema
+		:ExigeChamp("defaut")
+		sType est une chaîne = :TypeDe(:sDernier)
+		SI sType = "entier" ET PAS RegexVérifie(sValeur, "^-?[0-9]+$") ALORS
+			:Refuse("« defaut » du champ « " + :sDernier + " » doit être un entier.")
+		FIN
+		SI sType = "reel" ET PAS RegexVérifie(sValeur, "^-?[0-9]+(\.[0-9]+)?$") ALORS
+			:Refuse("« defaut » du champ « " + :sDernier + " » doit être un nombre.")
+		FIN
+		SI sType = "booleen" ET sValeur <> "true" ET sValeur <> "false" ALORS
+			:Refuse("« defaut » du champ « " + :sDernier + " » doit être true ou false.")
+		FIN
+		SI sType = "date" ET PAS EbDateIsoValide(sValeur) ALORS
+			:Refuse("« defaut » du champ « " + :sDernier + " » doit être une date AAAA-MM-JJ.")
+		FIN
+		SI sType = "dateheure" ET PAS EbDateHeureIsoValide(sValeur) ALORS
+			:Refuse("« defaut » du champ « " + :sDernier + " » doit être une date et heure AAAA-MM-JJTHH:MM:SS.")
+		FIN
+		SI TableauCherche(:tabAbsence, :sDernier) < 1 ALORS
+			:tabAbsence[:sDernier] = "defaut"
+		FIN
+		:tabTextes[:sDernier + ".defaut"] = sValeur
+		RENVOYER objet
+	FIN
+
+	// Le type de l'objet rendu par EbPoinconValide : on passe une variable de la structure voulue (ses valeurs ne comptent pas).
+	PROCEDURE PUBLIQUE Cible(stCible est une Structure) : cEbSchema
+		:tabModele["modele"] = stCible
+		RENVOYER objet
+	FIN
+
+	PROCEDURE PUBLIQUE ACible() : booléen
+		RENVOYER TableauCherche(:tabModele, "modele") >= 1
+	FIN
+
+	PROCEDURE PUBLIQUE Modele() : Structure
+		RENVOYER :tabModele["modele"]
+	FIN
+
+	PROCEDURE PUBLIQUE Noms() : tableau de chaînes
+		RENVOYER :tabNoms
+	FIN
+
+	PROCEDURE PUBLIQUE TypeDe(sNom est une chaîne) : chaîne
+		POUR nPosition = 1 À :tabNoms..Occurrence
+			SI :tabNoms[nPosition] = sNom ALORS
+				RENVOYER :tabTypes[nPosition]
+			FIN
+		FIN
+		RENVOYER ""
+	FIN
+
+	PROCEDURE PUBLIQUE ARegle(sNom est une chaîne, sRegle est une chaîne) : booléen
+		RENVOYER TableauCherche(:tabNombres, sNom + "." + sRegle) >= 1
+	FIN
+
+	// La valeur d'une règle numérique (longueurMin, longueurMax, min, max) ; 0 si la règle n'est pas posée (lire une clé absente d'un tableau associatif rend Null, et « ET » n'a pas de court-circuit : une comparaison avec Null planterait).
+	PROCEDURE PUBLIQUE Regle(sNom est une chaîne, sRegle est une chaîne) : réel
+		SI PAS :ARegle(sNom, sRegle) ALORS
+			RENVOYER 0
+		FIN
+		RENVOYER :tabNombres[sNom + "." + sRegle]
+	FIN
+
+	PROCEDURE PUBLIQUE ARegleTexte(sNom est une chaîne, sRegle est une chaîne) : booléen
+		RENVOYER TableauCherche(:tabTextes, sNom + "." + sRegle) >= 1
+	FIN
+
+	// La valeur d'une règle texte (valeurs, motif, defaut) ; « » si la règle n'est pas posée. Valeurs rend « |a|b| ».
+	PROCEDURE PUBLIQUE RegleTexte(sNom est une chaîne, sRegle est une chaîne) : chaîne
+		SI PAS :ARegleTexte(sNom, sRegle) ALORS
+			RENVOYER ""
+		FIN
+		RENVOYER :tabTextes[sNom + "." + sRegle]
+	FIN
+
+	// Le champ peut-il manquer du corps ? (Facultatif ou Defaut)
+	PROCEDURE PUBLIQUE PeutManquer(sNom est une chaîne) : booléen
+		RENVOYER TableauCherche(:tabAbsence, sNom) >= 1
+	FIN
+
+	// Le champ peut-il valoir null ? (Facultatif seulement : un Defaut ne rend pas null permis)
+	PROCEDURE PUBLIQUE PeutEtreNul(sNom est une chaîne) : booléen
+		SI TableauCherche(:tabAbsence, sNom) < 1 ALORS
+			RENVOYER Faux
+		FIN
+		RENVOYER :tabAbsence[sNom] = "facultatif"
+	FIN
+
+FIN

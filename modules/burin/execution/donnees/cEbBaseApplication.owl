@@ -23,12 +23,17 @@ PRIVÉ
 		RENVOYER "base"
 	FIN
 
-	// Ouvre la base et le dit au journal. Ne lève rien si elle est injoignable : un avertissement, et le service démarre quand même.
+	// Ouvre la base et le dit au journal. Ne lève rien si elle est injoignable : un avertissement qui dit la cause (et, si c'est le TLS, le réglage DB_TLS), et le service démarre quand même.
 	PROCEDURE PUBLIQUE Ouvre()
+		sCause est une chaîne = ""
 		SI :oBase.Ouvre() ALORS
 			:oJournal.Info("Base ouverte")
 		SINON
-			:oJournal.Avertit("Base injoignable au démarrage : le service démarre, /health répondra 503 jusqu'à son retour")
+			sCause = :oBase.DernierMessage()
+			SI Droite(sCause, 1) = "." ALORS
+				sCause = Gauche(sCause, Taille(sCause) - 1)
+			FIN
+			:oJournal.Avertit("Base injoignable au démarrage : " + sCause + "." + EbBaseIndiceTls(sCause) + " Le service démarre, /health répondra 503 jusqu'à son retour.")
 		FIN
 	FIN
 
@@ -47,7 +52,7 @@ PRIVÉ
 		tabAucun  est un tableau associatif
 		oResultat est un cEbResultatSql     = :oBase.Execute("SELECT 1", tabAucun)
 		SI PAS oResultat.Succes() ALORS
-			:oJournal.Avertit("Sonde de la base en échec : " + oResultat.Message())
+			:oJournal.Avertit("Sonde de la base en échec : " + oResultat.Message() + EbBaseIndiceTls(oResultat.Message()))
 		FIN
 		RENVOYER oResultat.Succes()
 	FIN

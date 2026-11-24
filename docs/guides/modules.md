@@ -30,7 +30,7 @@ Un projet `slim` n'a pas de base : `ebony migrate` et `ebony make` refusent de s
 - **Cycle de vie.** L'application démarre dans `FinInitialisation` et s'arrête à la fermeture. `GET /api/health` répond 200, ou 503 si la base ne répond pas.
 - **Configuration.** `.env` et `.env.secrets`, contrôlés d'après un schéma. Une configuration invalide arrête le démarrage en listant toutes les erreurs. Voir [la configuration](configuration.md).
 - **Journal.** Une ligne JSON par événement sur la sortie standard. Le seuil vient de `LOG_NIVEAU` (`info` par défaut). Voir [le journal](journalisation.md).
-- **HTTP.** Le contexte de requête, la réponse, les erreurs JSON standard (voir [les erreurs](erreurs.md)).
+- **HTTP.** Le contexte de requête, la réponse, les erreurs JSON standard.
 - **Commandes.** `new`, `init`, `add`, `env`, `request`, `doctor`, `restore`, `upgrade`, `install`, `uninstall` : voir [la référence](commandes.md).
 
 ## `burin` : la base de données
@@ -39,7 +39,7 @@ Burin est le module qui parle à la base. Le kit `slim` ne l'a pas, et un projet
 
 - **Connexion.** Une connexion partagée qui se rétablit toute seule : si une requête échoue, elle vérifie la base, rouvre la connexion perdue et rejoue la requête une fois. Si la base reste injoignable, la route répond 503.
 - **Bases.** SQLite et PostgreSQL pour les migrations et les ressources. Avec HFSQL, Burin se connecte, mais ne génère ni migrations ni ressources (voir [la compatibilité](compatibilite.md)).
-- **Commandes.** `ebony migrate`, et `ebony make` (voir [make](make.md)).
+- **Commandes.** `ebony migrate`, et `ebony make`.
 
 ## `poincon` : la validation
 
@@ -60,7 +60,7 @@ oFabrique est une cFabriqueClient(cEbGenerateurFigurant(42))
 
 Les valeurs ressemblent à de vraies données : le nom de la colonne décide (`prenom`, `nom`, `email`, `telephone`, `ville`, `pays`, `adresse`, `code_postal`, `societe`…), et un prénom, un nom et un courriel d'une même ligne vont ensemble. Elles sont **reproductibles** : la même graine donne les mêmes valeurs à chaque lancement, sous Windows comme sous Linux. Les numéros de téléphone sont dans une plage fictive (`01 99 00 xx xx`).
 
-Pour dire ce qu'un texte représente, ajoutez une **sorte** dans `--champs` : `nom:texte~produit`, `prenom:texte~prenom-feminin`, `~nom-de-famille`, `~courriel`, `~ville`… Voir [make](make.md).
+Pour dire ce qu'un texte représente, ajoutez une **sorte** dans `--champs` : `nom:texte~produit`, `prenom:texte~prenom-feminin`, `~nom-de-famille`, `~courriel`, `~ville`…
 
 À savoir : les clés étrangères ne sont pas valides d'office (fixez-les avec `CreeAvec`), et les listes de prénoms, de noms et de villes sont courtes.
 

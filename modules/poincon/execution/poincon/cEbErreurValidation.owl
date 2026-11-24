@@ -1,0 +1,26 @@
+// Une erreur de validation d'un champ : le champ, la règle en cause (« longueurMin », « type », « absent »…) et le message pour le client. Objet valeur immuable, rempli par le constructeur.
+// Le Poinçon en rend la liste (EbPoinconErreurs) ; les messages personnalisés (version future) changeront le texte, pas cette forme.
+cEbErreurValidation est une Classe
+PRIVÉ
+	sChamp   est une chaîne = ""
+	sRegle   est une chaîne = ""
+	sMessage est une chaîne = ""
+
+	PROCEDURE Constructeur(sNomChamp est une chaîne, sNomRegle est une chaîne, sTexte est une chaîne)
+		:sChamp = sNomChamp
+		:sRegle = sNomRegle
+		:sMessage = sTexte
+	FIN
+
+	PROCEDURE PUBLIQUE Champ() : chaîne
+		RENVOYER :sChamp
+	FIN
+
+	PROCEDURE PUBLIQUE Regle() : chaîne
+		RENVOYER :sRegle
+	FIN
+
+	PROCEDURE PUBLIQUE Message() : chaîne
+		RENVOYER :sMessage
+	FIN
+FIN

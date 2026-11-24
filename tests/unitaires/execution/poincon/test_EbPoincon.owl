@@ -1,5 +1,5 @@
-// Tests de EbPoincon : le contrôle de la description (rien n'est ignoré en silence), l'obligation et les valeurs par défaut, les formats de date, chaque règle (longueurs, bornes, liste, motif), et la réponse qui nomme tout.
-// Les fonctions ne dépendent que du JSON passé en argument : aucun disque. La lecture du fichier par « owl serve » et les vraies réponses 422 sont prouvées par tests/integration/lanceur.ps1 (groupe make2).
+// Tests de EbPoincon : le contrôle de la description lue dans ressource.json (rien n'est ignoré en silence : règle inconnue, mauvais type de valeur, champ incorrect) et les petits utilitaires de lecture.
+// Les fonctions ne dépendent que du JSON passé en argument : aucun disque. La validation d'un corps (obligation, défauts, règles, 422) est testée dans test_EbPoinconValidation, test_EbPoinconRessource et test_cEbSchema ; la lecture du fichier par « owl serve » est prouvée par tests/integration/lanceur.ps1 (groupe make2).
 
 // Une description d'un seul champ, d'après le texte JSON du champ.
 PROCEDURE EbTestDescriptionPoincon(sChamp est une chaîne) : JSON
@@ -15,29 +15,6 @@ PROCEDURE EbTestRefusPoincon(sChamp est une chaîne) : chaîne
 	j = EbTestDescriptionPoincon(sChamp)
 	QUAND EXCEPTION DANS
 		EbPoinconControleDescription(j, "ressource.json")
-	FAIRE
-		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
-	FIN
-	RENVOYER sRes
-FIN
-
-// Rend « code|message » si EbPoinconRefuse lève, ou « » s'il ne fait rien.
-PROCEDURE EbTestRefuse(sAbsents est une chaîne, sErreurs est une chaîne) : chaîne
-	sRes est une chaîne = ""
-	QUAND EXCEPTION DANS
-		EbPoinconRefuse(sAbsents, sErreurs)
-	FAIRE
-		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
-	FIN
-	RENVOYER sRes
-FIN
-
-// La colonne du champ trouvé, ou « code|message » si la recherche échoue.
-PROCEDURE EbTestChampAbsentPoincon(j est un JSON, sColonne est une chaîne) : chaîne
-	sRes est une chaîne = ""
-	QUAND EXCEPTION DANS
-		jChamp est un JSON = EbPoinconChamp(j, sColonne)
-		sRes = jChamp["nom"]
 	FAIRE
 		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
 	FIN
@@ -104,113 +81,16 @@ PROCEDURE scenario_champ_incorrect_refuse()
 	dbgVérifieVrai(Position(sRefus, "il manque « champs »") > 0, "sans champs")
 FIN
 
-// Un champ qui n'est pas dans la description est une erreur (500) qui le nomme ; un champ présent est trouvé par sa COLONNE.
-PROCEDURE scenario_recherche_d_un_champ()
-	j est un JSON
-	j = EbTestDescriptionPoincon(`{ "nom": "Date de naissance", "type": "date" }, { "nom": "id", "type": "entier" }`)
-	jChamp est un JSON = EbPoinconChamp(j, "Date de naissance")
-	dbgVérifieEgalité(EbPoinconType(jChamp, "Date de naissance"), "date", "trouvé par le nom de la colonne, espaces compris")
-	dbgVérifieEgalité(EbTestChampAbsentPoincon(j, "id"), "id", "un autre champ")
-	sRefus est une chaîne = EbTestChampAbsentPoincon(j, "email")
-	dbgVérifieEgalité(Gauche(sRefus, 4), "500|", "absent : 500")
-	dbgVérifieVrai(Position(sRefus, "« email »") > 0, "le champ est nommé")
-FIN
-
-// Obligatoire : ni nullable ni muni d'un défaut.
-PROCEDURE scenario_obligation()
-	j est un JSON
-	j = EbTestDescriptionPoincon(`{ "nom": "a", "type": "texte" }, { "nom": "b", "type": "texte", "nullable": true }, { "nom": "c", "type": "texte", "defaut": "x" }, { "nom": "d", "type": "texte", "nullable": false }, { "nom": "e", "type": "booleen", "defaut": false }`)
-	dbgVérifieVrai(EbPoinconObligatoire(j, "a"), "ni nullable ni défaut : obligatoire")
-	dbgVérifieFaux(EbPoinconObligatoire(j, "b"), "nullable : facultatif")
-	dbgVérifieFaux(EbPoinconObligatoire(j, "c"), "avec un défaut : facultatif")
-	dbgVérifieVrai(EbPoinconObligatoire(j, "d"), "nullable faux : obligatoire")
-	dbgVérifieFaux(EbPoinconObligatoire(j, "e"), "un défaut faux est un défaut")
-	dbgVérifieEgalité(EbPoinconAjouteAbsent("", "nom"), "nom", "la liste commence")
-	dbgVérifieEgalité(EbPoinconAjouteAbsent("nom", "prix"), "nom, prix", "puis s'allonge")
-FIN
-
-// Un champ absent prend le défaut de la description, sinon la valeur par défaut du type ; un champ présent garde sa valeur (zéro, faux et vide compris).
-PROCEDURE scenario_valeurs_par_defaut()
-	j est un JSON
-	j = EbTestDescriptionPoincon(`{ "nom": "t", "type": "texte", "defaut": "actif" }, { "nom": "u", "type": "texte" }, { "nom": "n", "type": "entier", "defaut": 7 }, { "nom": "m", "type": "entier" }, { "nom": "r", "type": "reel", "defaut": 2.5 }, { "nom": "s", "type": "reel" }, { "nom": "b", "type": "booleen", "defaut": true }, { "nom": "c", "type": "booleen" }`)
-	dbgVérifieEgalité(EbPoinconTexte(j, "t", "__absent__"), "actif", "texte absent : le défaut")
-	dbgVérifieEgalité(EbPoinconTexte(j, "u", "__absent__"), "", "texte absent sans défaut : vide")
-	dbgVérifieEgalité(EbPoinconTexte(j, "t", "suspendu"), "suspendu", "texte présent")
-	dbgVérifieEgalité(EbPoinconTexte(j, "t", ""), "", "texte vide présent : une valeur")
-	dbgVérifieEgalité(EbPoinconEntier(j, "n",-999999999), 7, "entier absent : le défaut")
-	dbgVérifieEgalité(EbPoinconEntier(j, "m",-999999999), 0, "entier absent sans défaut : 0")
-	dbgVérifieEgalité(EbPoinconEntier(j, "n", 0), 0, "zéro présent : une valeur")
-	dbgVérifieEgalité(EbPoinconReel(j, "r",-999999999.5), 2.5, "réel absent : le défaut")
-	dbgVérifieEgalité(EbPoinconReel(j, "s",-999999999.5), 0, "réel absent sans défaut : 0")
-	dbgVérifieEgalité(EbPoinconReel(j, "r", 0), 0, "zéro présent : une valeur")
-	dbgVérifieVrai(EbPoinconBooleen(j, "b",-1), "booléen absent : le défaut vrai")
-	dbgVérifieFaux(EbPoinconBooleen(j, "c",-1), "booléen absent sans défaut : faux")
-	dbgVérifieFaux(EbPoinconBooleen(j, "b", 0), "faux présent : une valeur, il remplace le défaut")
-	dbgVérifieVrai(EbPoinconBooleen(j, "c", 1), "vrai présent")
-FIN
-
-// Un texte : longueurs en CARACTÈRES (un accent compte pour un), liste de valeurs, motif non ancré ; chaque erreur est une phrase qui nomme le champ, et elles se cumulent.
-PROCEDURE scenario_regles_d_un_texte()
-	j est un JSON
-	j = EbTestDescriptionPoincon(`{ "nom": "nom", "type": "texte", "regles": { "longueurMin": 3, "longueurMax": 5 } }, { "nom": "statut", "type": "texte", "regles": { "valeurs": ["actif", "suspendu"] } }, { "nom": "code", "type": "texte", "regles": { "motif": "^[A-Z]{2}[0-9]+$" } }, { "nom": "libre", "type": "texte", "regles": { "motif": "[0-9]" } }, { "nom": "tout", "type": "texte", "regles": { "longueurMin": 4, "motif": "^x" } }`)
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "nom", "nom", "été"), "", "trois caractères accentués : 3, dans les bornes")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "nom", "nom", "ab"), "Le champ « nom » doit avoir au moins 3 caractères. ", "trop court")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "nom", "nom", "abcdef"), "Le champ « nom » dépasse 5 caractères. ", "trop long")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "nom", "nom", "abcde"), "", "la borne haute est permise")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "statut", "statut", "actif"), "", "valeur permise")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "statut", "statut", "inactif"), "Le champ « statut » doit valoir l'une de ces valeurs : actif, suspendu. ", "valeur refusée, la liste est dite")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "statut", "statut", "Actif"), "Le champ « statut » doit valoir l'une de ces valeurs : actif, suspendu. ", "la comparaison tient compte de la casse")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "code", "code", "FR75"), "", "motif respecté")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "code", "code", "fr75"), "Le champ « code » n'a pas la forme attendue. ", "motif non respecté")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "code", "code", "FR75 "), "Le champ « code » n'a pas la forme attendue. ", "ancré : l'espace final est refusé")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "libre", "libre", "abc9def"), "", "motif non ancré : une recherche")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "libre", "libre", "abcdef"), "Le champ « libre » n'a pas la forme attendue. ", "motif non ancré, sans correspondance")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "tout", "tout", "yz"), "Le champ « tout » doit avoir au moins 4 caractères. Le champ « tout » n'a pas la forme attendue. ", "plusieurs règles violées : toutes sont dites")
-FIN
-
-// Un texte obligatoire vide est refusé (et ses autres règles ne sont pas évaluées) ; vide, un texte facultatif ou muni d'un défaut n'est pas contrôlé.
-PROCEDURE scenario_texte_vide()
-	j est un JSON
-	j = EbTestDescriptionPoincon(`{ "nom": "a", "type": "texte", "regles": { "longueurMin": 3 } }, { "nom": "b", "type": "texte", "nullable": true, "regles": { "longueurMin": 3 } }, { "nom": "c", "type": "texte", "defaut": "x", "regles": { "longueurMin": 3 } }`)
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "a", "a", ""), "Le champ « a » ne peut pas être vide. ", "obligatoire vide")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "a", "a", "   "), "Le champ « a » ne peut pas être vide. ", "obligatoire fait d'espaces")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "b", "b", ""), "", "facultatif vide : pas de valeur, pas de contrôle")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "c", "c", ""), "", "avec un défaut, vide : pas de contrôle")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "b", "b", "ab"), "Le champ « b » doit avoir au moins 3 caractères. ", "facultatif non vide : contrôlé")
-FIN
-
-// Une date et une date et heure sont contrôlées par leur format ; vide, une date facultative n'est pas contrôlée.
-PROCEDURE scenario_champs_date()
-	j est un JSON
-	j = EbTestDescriptionPoincon(`{ "nom": "naissance", "type": "date" }, { "nom": "vu", "type": "dateheure", "nullable": true }`)
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "naissance", "naissance", "1990-01-02"), "", "date valide")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "naissance", "naissance", "02/01/1990"), "Le champ « naissance » doit être une date au format AAAA-MM-JJ. ", "date invalide")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "vu", "vu", "2026-11-16T10:15:30"), "", "date et heure valides")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "vu", "vu", "2026-11-16"), "Le champ « vu » doit être une date et une heure au format AAAA-MM-JJTHH:MM:SS. ", "sans heure")
-	dbgVérifieEgalité(EbPoinconVerifieTexte(j, "vu", "vu", ""), "", "facultatif vide")
-FIN
-
-// Un nombre : bornes inclusives, liste de valeurs pour un entier ; le message reprend la borne telle qu'écrite dans le fichier.
-PROCEDURE scenario_regles_d_un_nombre()
-	j est un JSON
-	j = EbTestDescriptionPoincon(`{ "nom": "age", "type": "entier", "regles": { "min": 0, "max": 150 } }, { "nom": "prix", "type": "reel", "regles": { "min": 0.5, "max": 99.5 } }, { "nom": "niveau", "type": "entier", "regles": { "valeurs": [1, 2, 3] } }, { "nom": "libre", "type": "entier" }`)
-	dbgVérifieEgalité(EbPoinconVerifieEntier(j, "age", "age", 0), "", "la borne basse est permise")
-	dbgVérifieEgalité(EbPoinconVerifieEntier(j, "age", "age", 150), "", "la borne haute est permise")
-	dbgVérifieEgalité(EbPoinconVerifieEntier(j, "age", "age",-1), "Le champ « age » doit être supérieur ou égal à 0. ", "sous le minimum")
-	dbgVérifieEgalité(EbPoinconVerifieEntier(j, "age", "age", 151), "Le champ « age » doit être inférieur ou égal à 150. ", "au-dessus du maximum")
-	dbgVérifieEgalité(EbPoinconVerifieReel(j, "prix", "prix", 0.5), "", "réel : la borne")
-	dbgVérifieEgalité(EbPoinconVerifieReel(j, "prix", "prix", 0.25), "Le champ « prix » doit être supérieur ou égal à 0.5. ", "réel sous le minimum")
-	dbgVérifieEgalité(EbPoinconVerifieReel(j, "prix", "prix", 100), "Le champ « prix » doit être inférieur ou égal à 99.5. ", "réel au-dessus du maximum")
-	dbgVérifieEgalité(EbPoinconVerifieEntier(j, "niveau", "niveau", 2), "", "valeur permise")
-	dbgVérifieEgalité(EbPoinconVerifieEntier(j, "niveau", "niveau", 4), "Le champ « niveau » doit valoir l'une de ces valeurs : 1, 2, 3. ", "valeur refusée")
-	dbgVérifieEgalité(EbPoinconVerifieEntier(j, "libre", "libre",-5), "", "sans règle : tout est permis")
-FIN
-
-// UNE seule réponse 422 nomme les champs obligatoires absents (au singulier ou au pluriel) puis les erreurs de règles ; rien à dire : aucune exception.
-PROCEDURE scenario_reponse_unique()
-	dbgVérifieEgalité(EbTestRefuse("", ""), "", "rien à refuser : aucune exception")
-	dbgVérifieEgalité(EbTestRefuse("nom", ""), "422|Champ obligatoire absent : nom.", "un champ absent")
-	dbgVérifieEgalité(EbTestRefuse("nom, prix", ""), "422|Champs obligatoires absents : nom, prix.", "plusieurs champs absents")
-	dbgVérifieEgalité(EbTestRefuse("", "Le champ « age » doit être supérieur ou égal à 0. "), "422|Le champ « age » doit être supérieur ou égal à 0.", "une erreur de règle, sans l'espace finale")
-	dbgVérifieEgalité(EbTestRefuse("nom", "Le champ « age » dépasse 3. Le champ « code » est faux. "), "422|Champ obligatoire absent : nom. Le champ « age » dépasse 3. Le champ « code » est faux.", "tout dans une seule réponse")
+// Les utilitaires de lecture : un booléen JSON vrai (faux s'il manque ou n'est pas un booléen), un nombre écrit comme dans le fichier, la nature d'un nombre.
+PROCEDURE scenario_utilitaires_de_lecture()
+	j est un JSON = ChaîneVersJSON(`{ "oui": true, "non": false, "texte": "true", "entier": 150, "reel": 99.5, "mot": "abc" }`)
+	dbgVérifieVrai(EbPoinconVrai(j, "oui"), "vrai")
+	dbgVérifieVrai(PAS EbPoinconVrai(j, "non"), "faux")
+	dbgVérifieVrai(PAS EbPoinconVrai(j, "texte"), "un texte n'est pas un booléen")
+	dbgVérifieVrai(PAS EbPoinconVrai(j, "absent"), "un membre absent n'est pas vrai")
+	dbgVérifieEgalité(EbPoinconTexteNombre(j["entier"]), "150", "un entier s'écrit sans décimale")
+	dbgVérifieEgalité(EbPoinconTexteNombre(j["reel"]), "99.5", "un réel s'écrit comme dans le fichier")
+	dbgVérifieVrai(EbPoinconEstNombre(j["entier"]), "un entier est un nombre")
+	dbgVérifieVrai(EbPoinconEstNombre(j["reel"]), "un réel est un nombre")
+	dbgVérifieVrai(PAS EbPoinconEstNombre(j["mot"]), "un texte n'est pas un nombre")
 FIN

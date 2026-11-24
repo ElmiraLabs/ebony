@@ -19,6 +19,28 @@ EbListe est une CollectionDeProcédures
 		RENVOYER URLDecode(sBrut)
 	FIN
 
+	// Les NOMS des paramètres de la query d'une adresse, décodés, dans l'ordre, sans doublon ni nom vide : « /api/produits?page=2&nom=Ada&nom=Bob » donne page, nom. Sans query : un tableau vide.
+	// Le chemin reçu par une route (MoiMême..Requête..Chemin) contient la query en entier (mesuré, OWL 1.9.0) ; OWL, lui, ignore en silence un paramètre que la route ne déclare pas.
+	PROCEDURE EbListeNomsRecus(sChemin est une chaîne) : tableau de chaînes
+		tabRes         est un tableau de chaînes
+		nInterrogation est un entier             = Position(sChemin, "?")
+		SI nInterrogation < 1 ALORS
+			RENVOYER tabRes
+		FIN
+		POUR TOUT sPaire DE ChaîneDécoupe(Milieu(sChemin, nInterrogation + 1), "&")
+			sNom  est une chaîne = sPaire
+			nEgal est un entier  = Position(sPaire, "=")
+			SI nEgal > 0 ALORS
+				sNom = Gauche(sPaire, nEgal - 1)
+			FIN
+			sNom = EbListeTexte(sNom)
+			SI sNom <> "" ET TableauCherche(tabRes, sNom) < 1 ALORS
+				TableauAjoute(tabRes, sNom)
+			FIN
+		FIN
+		RENVOYER tabRes
+	FIN
+
 	// Vrai pour un entier écrit en chiffres (avec un « - » facultatif), de neuf chiffres au plus : assez pour une page, un décalage ou un identifiant, et sans dépassement.
 	PROCEDURE EbListeEntierValide(sTexte est une chaîne) : booléen
 		RENVOYER RegexVérifie(sTexte, "^-?[0-9]{1,9}$")

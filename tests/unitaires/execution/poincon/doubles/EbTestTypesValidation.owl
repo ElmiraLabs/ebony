@@ -1,0 +1,12 @@
+// La structure que rend EbPoinconValide dans ces tests (une Structure seule dans son fichier n'est pas reconnue : dans une Collection).
+EbTestTypesValidation est une CollectionDeProcédures
+	stEbTestProduit est une Structure
+		Nom    est une chaîne
+		Prix   est un réel
+		Stock  est un entier
+		Statut est une chaîne
+		Ref    est une chaîne
+		Actif  est un booléen
+		Sortie est une chaîne
+	FIN
+FIN

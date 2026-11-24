@@ -1,0 +1,127 @@
+// Tests du schéma d'une ressource (EbPoinconRessource.owl) : un schéma construit depuis la description (ressource.json) porte les mêmes champs, types, règles, défauts et « nullable » que le fichier, sans lire de disque.
+// La lecture du fichier à chaque requête sous « owl serve » est prouvée par tests/integration/lanceur.ps1 (groupe make).
+
+// La description d'un client : une clé, des champs de chaque type, avec et sans règles.
+PROCEDURE EbTestDescriptionRessource() : JSON
+	jDescription est un JSON = ChaîneVersJSON(`{ "ressource": "Client", "table": "clients", "champs": [ { "nom": "id", "type": "entier", "cle": true }, { "nom": "nom", "type": "texte", "regles": { "longueurMin": 3, "longueurMax": 10, "motif": "^[A-Z]" } }, { "nom": "age", "type": "entier", "regles": { "min": 0, "max": 150, "valeurs": [18, 21, 65] } }, { "nom": "note", "type": "reel", "defaut": 1.5, "regles": { "min": 0, "max": 20 } }, { "nom": "actif", "type": "booleen", "defaut": true }, { "nom": "statut", "type": "texte", "defaut": "nouveau", "regles": { "valeurs": ["nouveau", "actif"] } }, { "nom": "email", "type": "texte", "nullable": true }, { "nom": "naissance", "type": "date", "nullable": true }, { "nom": "vu", "type": "dateheure", "nullable": true } ] }`)
+	RENVOYER jDescription
+FIN
+
+// Les erreurs (champ puis règle, séparés par des virgules) d'un corps pour le schéma de la description, en excluant les colonnes données.
+PROCEDURE EbTestErreursRessource(sCorps est une chaîne, sExclus est une chaîne, bPartiel est un booléen) : chaîne
+	oSch       est un cEbSchema                      = EbSchemaDeDescription(EbTestDescriptionRessource(), sExclus, "")
+	jCorps     est un JSON                           = ChaîneVersJSON(sCorps)
+	tabErreurs est un tableau de cEbErreurValidation = EbPoinconErreurs(oSch, jCorps, bPartiel)
+	sRes       est une chaîne                        = ""
+	POUR TOUT oErreur DE tabErreurs
+		SI sRes <> "" ALORS
+			sRes += ", "
+		FIN
+		sRes += oErreur.Champ() + ":" + oErreur.Regle()
+	FIN
+	RENVOYER sRes
+FIN
+
+// Les champs et leurs types passent de la description au schéma, dans l'ordre ; les colonnes exclues n'y sont pas.
+PROCEDURE scenario_champs_de_la_description()
+	oSch    est un cEbSchema          = EbSchemaDeDescription(EbTestDescriptionRessource(), "", "")
+	tabNoms est un tableau de chaînes = oSch.Noms()
+	dbgVérifieEgalité(tabNoms..Occurrence, 9, "neuf champs, la clé comprise")
+	dbgVérifieEgalité(tabNoms[1], "id", "premier")
+	dbgVérifieEgalité(oSch.TypeDe("nom"), "texte", "texte")
+	dbgVérifieEgalité(oSch.TypeDe("age"), "entier", "entier")
+	dbgVérifieEgalité(oSch.TypeDe("note"), "reel", "réel")
+	dbgVérifieEgalité(oSch.TypeDe("actif"), "booleen", "booléen")
+	dbgVérifieEgalité(oSch.TypeDe("naissance"), "date", "date")
+	dbgVérifieEgalité(oSch.TypeDe("vu"), "dateheure", "date et heure")
+	oSansCle est un cEbSchema = EbSchemaDeDescription(EbTestDescriptionRessource(), "id", "")
+	dbgVérifieEgalité(oSansCle.Noms()..Occurrence, 8, "la clé exclue n'y est pas")
+	dbgVérifieEgalité(oSansCle.TypeDe("id"), "", "id exclu")
+	oDeuxExclus est un cEbSchema = EbSchemaDeDescription(EbTestDescriptionRessource(), "id|email", "")
+	dbgVérifieEgalité(oDeuxExclus.Noms()..Occurrence, 7, "deux colonnes exclues")
+FIN
+
+// Les règles du fichier sont celles du schéma : longueurs, motif, bornes, valeurs d'un entier et d'un texte.
+PROCEDURE scenario_regles_de_la_description()
+	oSch est un cEbSchema = EbSchemaDeDescription(EbTestDescriptionRessource(), "id", "")
+	dbgVérifieEgalité(oSch.Regle("nom", "longueurMin"), 3, "longueurMin")
+	dbgVérifieEgalité(oSch.Regle("nom", "longueurMax"), 10, "longueurMax")
+	dbgVérifieEgalité(oSch.RegleTexte("nom", "motif"), "^[A-Z]", "motif")
+	dbgVérifieEgalité(oSch.Regle("age", "max"), 150, "max")
+	dbgVérifieEgalité(oSch.RegleTexte("age", "valeurs"), "|18|21|65|", "valeurs d'un entier")
+	dbgVérifieEgalité(oSch.RegleTexte("statut", "valeurs"), "|nouveau|actif|", "valeurs d'un texte")
+FIN
+
+// « nullable » donne un champ facultatif ; un « defaut » donne un champ qui peut manquer, avec ce défaut écrit comme le veut le schéma (true, 1.5, nouveau).
+PROCEDURE scenario_nullable_et_defaut()
+	oSch est un cEbSchema = EbSchemaDeDescription(EbTestDescriptionRessource(), "id", "")
+	dbgVérifieVrai(oSch.PeutEtreNul("email"), "email peut être null")
+	dbgVérifieVrai(oSch.PeutManquer("email"), "email peut manquer")
+	dbgVérifieVrai(PAS oSch.PeutManquer("nom"), "nom est obligatoire")
+	dbgVérifieVrai(oSch.PeutManquer("note"), "note peut manquer (défaut)")
+	dbgVérifieVrai(PAS oSch.PeutEtreNul("note"), "note ne peut pas être null")
+	dbgVérifieEgalité(oSch.RegleTexte("note", "defaut"), "1.5", "défaut réel")
+	dbgVérifieEgalité(oSch.RegleTexte("actif", "defaut"), "true", "défaut booléen")
+	dbgVérifieEgalité(oSch.RegleTexte("statut", "defaut"), "nouveau", "défaut texte")
+FIN
+
+// Un corps valide passe ; les champs obligatoires sont le nom, l'âge ; le reste a un défaut ou est facultatif.
+PROCEDURE scenario_corps_d_une_ressource()
+	dbgVérifieEgalité(EbTestErreursRessource(`{"nom":"Ada","age":21}`, "id", Faux), "", "seulement les obligatoires")
+	dbgVérifieEgalité(EbTestErreursRessource(`{}`, "id", Faux), "nom:absent, age:absent", "deux absents")
+	dbgVérifieEgalité(EbTestErreursRessource(`{"id":3,"nom":"Ada","age":21}`, "id", Faux), "", "la colonne exclue est ignorée même envoyée")
+	dbgVérifieEgalité(EbTestErreursRessource(`{}`, "id", Vrai), "", "partiel : rien n'est exigé")
+FIN
+
+// Chaque règle du fichier s'applique au corps.
+PROCEDURE scenario_regles_appliquees_au_corps()
+	dbgVérifieEgalité(EbTestErreursRessource(`{"nom":"ab","age":21}`, "id", Faux), "nom:longueurMin, nom:motif", "nom trop court et sans majuscule")
+	dbgVérifieEgalité(EbTestErreursRessource(`{"nom":"Ada","age":22}`, "id", Faux), "age:valeurs", "âge hors de la liste")
+	dbgVérifieEgalité(EbTestErreursRessource(`{"nom":"Ada","age":21,"note":21}`, "id", Faux), "note:max", "note trop grande")
+	dbgVérifieEgalité(EbTestErreursRessource(`{"nom":"Ada","age":21,"note":"abc"}`, "id", Faux), "note:type-nombre", "note en texte")
+	dbgVérifieEgalité(EbTestErreursRessource(`{"nom":"Ada","age":21,"statut":"zzz"}`, "id", Faux), "statut:valeurs", "statut inconnu")
+	dbgVérifieEgalité(EbTestErreursRessource(`{"nom":"Ada","age":21,"naissance":"2026-02-30"}`, "id", Faux), "naissance:date", "date inexistante")
+	dbgVérifieEgalité(EbTestErreursRessource(`{"nom":"Ada","age":21,"email":null}`, "id", Faux), "", "null permis pour le facultatif")
+	dbgVérifieEgalité(EbTestErreursRessource(`{"nom":"Ada","age":21,"note":null}`, "id", Faux), "note:null", "null refusé pour un champ à défaut")
+FIN
+
+// Un objet rendu avec les défauts de la description : « note » 1.5, « actif » vrai, « statut » nouveau.
+PROCEDURE scenario_defauts_de_la_description_appliques()
+	oSch    est un cEbSchema       = EbSchemaDeDescription(EbTestDescriptionRessource(), "id", "")
+	stCible est un stEbTestProduit
+	oSch.Cible(stCible)
+	stRes est un stEbTestProduit = EbPoinconValide(oSch, `{"nom":"Ada","age":21}`, Faux)
+	dbgVérifieEgalité(stRes.Prix, 0, "prix : le schéma de cette description n'a pas ce champ, la valeur reste celle du type")
+	dbgVérifieEgalité(stRes.Statut, "nouveau", "statut : le défaut du fichier")
+	dbgVérifieVrai(stRes.Actif, "actif : le défaut du fichier")
+FIN
+
+// Une description introuvable lève 500 (c'est la première requête qui lit le fichier) ; le message nomme le chemin.
+PROCEDURE scenario_fichier_introuvable()
+	sRes est une chaîne = "aucune exception"
+	QUAND EXCEPTION DANS
+		EbSchemaDeRessource("app/domaine/inexistant/ressource.json", "", "")
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	dbgVérifieEgalité(Gauche(sRes, 4), "500|", "code 500")
+	dbgVérifieVrai(Position(sRes, "app/domaine/inexistant/ressource.json") > 0, "nomme le fichier")
+FIN
+
+// Une colonne dont le nom n'est pas une clé JSON (« date naissance ») s'envoie sous la clé que dit la table du générateur : le champ du schéma porte cette clé, et le corps est cherché sous elle.
+PROCEDURE scenario_cles_json_des_colonnes()
+	dbgVérifieEgalité(EbRessourceCle("", "nom"), "nom", "sans table : la colonne")
+	dbgVérifieEgalité(EbRessourceCle("date naissance=date_naissance", "date naissance"), "date_naissance", "une colonne dans la table")
+	dbgVérifieEgalité(EbRessourceCle("a b=a_b|date naissance=date_naissance|c d=c_d", "date naissance"), "date_naissance", "au milieu de la table")
+	dbgVérifieEgalité(EbRessourceCle("a b=a_b|date naissance=date_naissance|c d=c_d", "c d"), "c_d", "en dernier")
+	dbgVérifieEgalité(EbRessourceCle("a b=a_b", "nom"), "nom", "une colonne absente de la table")
+	jDescription est un JSON      = ChaîneVersJSON(`{ "champs": [ { "nom": "date naissance", "type": "date", "nullable": true }, { "nom": "nom", "type": "texte" } ] }`)
+	oSch         est un cEbSchema = EbSchemaDeDescription(jDescription, "", "date naissance=date_naissance")
+	dbgVérifieEgalité(oSch.TypeDe("date_naissance"), "date", "le champ porte la clé JSON")
+	dbgVérifieEgalité(oSch.TypeDe("date naissance"), "", "pas le nom de la colonne")
+	jBon     est un JSON = ChaîneVersJSON(`{"nom":"Ada","date_naissance":"1990-01-03"}`)
+	jMauvais est un JSON = ChaîneVersJSON(`{"nom":"Ada","date_naissance":"1990-02-30"}`)
+	dbgVérifieEgalité(EbPoinconErreurs(oSch, jBon, Faux)..Occurrence, 0, "la clé JSON est cherchée dans le corps")
+	tabErreurs est un tableau de cEbErreurValidation = EbPoinconErreurs(oSch, jMauvais, Faux)
+	dbgVérifieEgalité(tabErreurs[1].Message(), "Le champ « date_naissance » doit être une date au format AAAA-MM-JJ. ", "le message dit la clé JSON")
+FIN

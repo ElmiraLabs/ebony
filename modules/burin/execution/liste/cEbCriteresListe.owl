@@ -12,6 +12,7 @@ PRIVÉ
 	sOrdre      est une chaîne            = ""
 	tabFiltres  est un tableau associatif
 	tabSlugs    est un tableau de chaînes
+	tabRecus    est un tableau de chaînes
 	sErreurs    est une chaîne            = ""
 
 	PROCEDURE Constructeur(sPage est une chaîne, sLimite est une chaîne, sTri est une chaîne, sOrdre est une chaîne)
@@ -105,9 +106,47 @@ PRIVÉ
 		FIN
 	FIN
 
-	// Lève 400, UNE seule fois, avec toutes les erreurs : un paramètre mal formé, un tri qui n'est pas une colonne.
+	// Retient les noms des paramètres de la query reçue (le chemin de la requête : MoiMême..Requête..Chemin). Verifie() refuse alors ceux que la liste ne connaît pas. Sans cet appel, rien n'est contrôlé de ce côté (un contrôleur écrit avant cet ajout reste valide).
+	PROCEDURE PUBLIQUE Recu(sChemin est une chaîne)
+		:tabRecus = EbListeNomsRecus(sChemin)
+	FIN
+
+	// Vrai si la liste connaît ce paramètre : page, limite, tri, ordre, ou « filtre_ » suivi d'une colonne déclarée (AjouteChamp). La casse compte (OWL distingue « Page » de « page » dans une query).
+	PROCEDURE PRIVÉE Connait(sNom est une chaîne) : booléen
+		SI sNom = "page" OU sNom = "limite" OU sNom = "tri" OU sNom = "ordre" ALORS
+			RENVOYER Vrai
+		FIN
+		RENVOYER Gauche(sNom, 7) = "filtre_" ET TableauCherche(:tabSlugs, Milieu(sNom, 8)) > 0
+	FIN
+
+	// Les paramètres permis, écrits comme dans l'adresse : page, limite, tri, ordre, puis un filtre par colonne.
+	PROCEDURE PRIVÉE Permis() : chaîne
+		sRes est une chaîne = "page, limite, tri, ordre"
+		POUR TOUT sSlug DE :tabSlugs
+			sRes += ", filtre_" + sSlug
+		FIN
+		RENVOYER sRes
+	FIN
+
+	// Lève 400, UNE seule fois, avec toutes les erreurs : un paramètre mal formé, un tri qui n'est pas une colonne, un paramètre que la liste ne connaît pas (« nom » pour « filtre_nom » : sans ce contrôle, OWL l'ignorerait et la réponse serait la table entière).
 	PROCEDURE PUBLIQUE Verifie()
-		sMessage est une chaîne = :sErreurs
+		sMessage  est une chaîne = :sErreurs
+		sInconnus est une chaîne = ""
+		nInconnus est un entier  = 0
+		POUR TOUT sRecu DE :tabRecus
+			SI PAS :Connait(sRecu) ALORS
+				SI sInconnus <> "" ALORS
+					sInconnus += ", "
+				FIN
+				sInconnus += sRecu
+				nInconnus += 1
+			FIN
+		FIN
+		SI nInconnus = 1 ALORS
+			sMessage += "Le paramètre « " + sInconnus + " » est inconnu (permis : " + :Permis() + "). "
+		SINON SI nInconnus > 1 ALORS
+			sMessage += "Les paramètres « " + sInconnus + " » sont inconnus (permis : " + :Permis() + "). "
+		FIN
 		SI :sTriDemande <> "" ET :sTri = "" ALORS
 			sMessage += "Le paramètre « tri » doit être l'un de : " + EbListeSlugs(:tabSlugs) + ". "
 		FIN

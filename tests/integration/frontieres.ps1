@@ -95,25 +95,25 @@ try {
     $r = Essai 'r9burin' 'modules/poincon/execution/poincon/EbPoincon.owl' 'oEssaiR9 est un cEbBaseApplication'
     Verifie "R9 : un fichier du poincon qui cite un nom de burin est refuse et nomme" (($r.Code -eq 1) -and ($r.Sortie -match 'R9 modules/poincon/execution/poincon/EbPoincon\.owl : reference cEbBaseApplication')) ("code=" + $r.Code + " " + $r.Sortie)
 
-    $r = Essai 'r9auth' 'modules/poincon/execution/poincon/EbCorpsRequete.owl' 'sEssaiR9Auth est une chaine = EbIdentiteDuJeton("x")'
-    Verifie "R9 : un fichier du poincon qui cite un nom d'auth est refuse et nomme" (($r.Code -eq 1) -and ($r.Sortie -match 'R9 modules/poincon/execution/poincon/EbCorpsRequete\.owl : reference EbIdentiteDuJeton')) ("code=" + $r.Code + " " + $r.Sortie)
+    $r = Essai 'r9auth' 'modules/poincon/execution/poincon/EbPoinconValidation.owl' 'sEssaiR9Auth est une chaine = EbIdentiteDuJeton("x")'
+    Verifie "R9 : un fichier du poincon qui cite un nom d'auth est refuse et nomme" (($r.Code -eq 1) -and ($r.Sortie -match 'R9 modules/poincon/execution/poincon/EbPoinconValidation\.owl : reference EbIdentiteDuJeton')) ("code=" + $r.Code + " " + $r.Sortie)
 
     $r = Essai 'r9coeur' 'modules/poincon/execution/poincon/EbPoincon.owl' 'sEssaiR9Coeur est une chaine = EbDateIsoValide("2026-01-01")'
     Verifie "R9 : le poincon peut utiliser le coeur (les dates ISO y sont)" ($r.Code -eq 0) ("code=" + $r.Code + " " + $r.Sortie)
 
-    $r = Essai 'r10burin' 'modules/burin/execution/liste/EbListe.owl' 'EbPoinconRefuse("a", "b")'
-    Verifie "R10 : un fichier de burin qui appelle le poincon est refuse et nomme" (($r.Code -eq 1) -and ($r.Sortie -match 'R10 modules/burin/execution/liste/EbListe\.owl : reference EbPoinconRefuse')) ("code=" + $r.Code + " " + $r.Sortie)
+    $r = Essai 'r10burin' 'modules/burin/execution/liste/EbListe.owl' 'EbPoinconValide("a", "b")'
+    Verifie "R10 : un fichier de burin qui appelle le poincon est refuse et nomme" (($r.Code -eq 1) -and ($r.Sortie -match 'R10 modules/burin/execution/liste/EbListe\.owl : reference EbPoinconValide')) ("code=" + $r.Code + " " + $r.Sortie)
 
-    $r = Essai 'r10coeur' 'modules/core/execution/http/EbErreurHttp.owl' 'EbPoinconRefuse("a", "b")'
-    Verifie "R10 : un fichier du coeur qui appelle le poincon est refuse et nomme" (($r.Code -eq 1) -and ($r.Sortie -match 'R10 modules/core/execution/http/EbErreurHttp\.owl : reference EbPoinconRefuse')) ("code=" + $r.Code + " " + $r.Sortie)
+    $r = Essai 'r10coeur' 'modules/core/execution/http/EbErreurHttp.owl' 'EbPoinconValide("a", "b")'
+    Verifie "R10 : un fichier du coeur qui appelle le poincon est refuse et nomme" (($r.Code -eq 1) -and ($r.Sortie -match 'R10 modules/core/execution/http/EbErreurHttp\.owl : reference EbPoinconValide')) ("code=" + $r.Code + " " + $r.Sortie)
 
-    $r = Essai 'r10texte' 'modules/burin/execution/liste/EbListe.owl' '// EbPoinconRefuse est cite en commentaire seulement'
+    $r = Essai 'r10texte' 'modules/burin/execution/liste/EbListe.owl' '// EbPoinconValide est cite en commentaire seulement'
     Verifie "R10 : un nom du poincon cite en commentaire ne declenche rien" ($r.Code -eq 0) ("code=" + $r.Code + " " + $r.Sortie)
 
-    $r = Essai 'r11' 'modules/core/outils/commandes/EbCommandeVersion.owl' '// EbPoinconRefuse'
-    Verifie "R11 : l'outillage du coeur qui cite le poincon est refuse et nomme" (($r.Code -eq 1) -and ($r.Sortie -match 'R11 modules/core/outils/commandes/EbCommandeVersion\.owl : cite EbPoinconRefuse')) ("code=" + $r.Code + " " + $r.Sortie)
+    $r = Essai 'r11' 'modules/core/outils/commandes/EbCommandeVersion.owl' '// EbPoinconValide'
+    Verifie "R11 : l'outillage du coeur qui cite le poincon est refuse et nomme" (($r.Code -eq 1) -and ($r.Sortie -match 'R11 modules/core/outils/commandes/EbCommandeVersion\.owl : cite EbPoinconValide')) ("code=" + $r.Code + " " + $r.Sortie)
 
-    $r = Essai 'r11burin' 'modules/burin/outils/commandes/make/EbContenuRoutes.owl' 'sEssaiR11 est une chaine = "EbPoinconRefuse(sAbsents, sErreurs)"'
+    $r = Essai 'r11burin' 'modules/burin/outils/commandes/make/EbContenuRoutes.owl' 'sEssaiR11 est une chaine = "EbPoinconValide(sAbsents, sErreurs)"'
     Verifie "R11 : le generateur de burin peut ecrire les appels au poincon (c'est lui qui ecrit le controleur)" ($r.Code -eq 0) ("code=" + $r.Code + " " + $r.Sortie)
     # R7 : le coeur ne nomme aucun fournisseur de base, meme en commentaire ou dans une chaine (ce sont des donnees du module burin).
     $r = Essai 'r7commentaire' 'modules/core/outils/commandes/EbCommandeVersion.owl' '// ici on parle de PostgreSQL'

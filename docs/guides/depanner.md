@@ -57,7 +57,7 @@ Vous êtes sur une autre base. Une faute dans `DB_FICHIER` ne provoque aucune er
 
 ### `no such table: eb_jetons`
 
-La table des jetons n'existe pas encore : lancez `ebony migrate`. Sa migration, `M…_CreeEbJetons`, est dans `database/migrations/`. L'ordre des [premiers pas](premiers-pas.md) est `migrate`, puis `token create`.
+La table des jetons n'existe pas encore : lancez `ebony migrate`. Sa migration, `M…_CreeEbJetons`, est dans `database/migrations/`. L'ordre est `migrate`, puis `token create`.
 
 ### Une route générée répond 401
 
@@ -91,7 +91,7 @@ Ce n'est pas une réussite : rien n'a été exécuté. Un projet sans ressource 
 
 ## PostgreSQL : `serveur refuse TLS, anti-downgrade`
 
-OWL exige par défaut un TLS vérifié vers PostgreSQL et refuse un serveur qui n'en propose pas. Pour un serveur **local de développement** sans TLS, mettez `DB_TLS=desactive` dans `.env`. En production, gardez `verifie`. Les quatre niveaux sont décrits dans la [configuration](configuration.md).
+OWL exige par défaut un TLS vérifié vers PostgreSQL et refuse un serveur qui n'en propose pas. Pour un serveur **local de développement** sans TLS, mettez `DB_TLS=desactive` dans `.env`. En production, gardez `verifie`. Les quatre niveaux sont décrits dans la [configuration](configuration.md). Le journal du service le dit aussi : l'avertissement de démarrage (« Base injoignable au démarrage : … ») et celui de la sonde de `/api/health` donnent la cause et, quand elle parle de TLS, ce réglage.
 
 ## Les chemins avec des accents
 
@@ -99,4 +99,4 @@ Un projet dans un dossier accentué (`Café\boutique`) fonctionne avec `ebony ne
 
 ## Si rien de cela ne correspond
 
-Lancez la commande avec `--json` quand elle l'accepte (une ligne, `{"ok":false,"error":"…"}`), relevez le code de sortie ([les erreurs](erreurs.md), [les commandes](commandes.md)) et ouvrez un [ticket](https://github.com/ElmiraLabs/ebony/issues) avec la commande, la sortie complète, `ebony --version`, `owl --version` et votre système.
+Lancez la commande avec `--json` quand elle l'accepte (une ligne, `{"ok":false,"error":"…"}`), relevez le code de sortie ([les commandes](commandes.md)) et ouvrez un [ticket](https://github.com/ElmiraLabs/ebony/issues) avec la commande, la sortie complète, `ebony --version`, `owl --version` et votre système.

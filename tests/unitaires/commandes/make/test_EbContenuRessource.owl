@@ -16,10 +16,10 @@ PROCEDURE EbTestDemandeContenu(sListe est une chaîne) : cEbDemandeMake
 	RENVOYER oDemande
 FIN
 
-// Les douze fichiers d'une ressource, dans l'ordre, sous app/ et tests/, avec des barres obliques.
+// Les treize fichiers d'une ressource, dans l'ordre, sous app/ et tests/, avec des barres obliques.
 PROCEDURE scenario_fichiers_d_une_ressource()
 	oDemande est un cEbDemandeMake = EbTestDemandeContenu("resource;Bon de commande;--champs;id:entier*,nom:texte")
-	dbgVérifieEgalité(EbListeVirgules(EbFichiersRessource(oDemande)), "app/domaine/bon-de-commande/cBonDeCommande.owl, app/domaine/bon-de-commande/ContratsBonDeCommande.owl, app/donnees/bon-de-commande/cRepoBonDeCommandeMemoire.owl, app/donnees/bon-de-commande/cRepoBonDeCommandeSql.owl, tests/unitaires/bon-de-commande/test_cBonDeCommande.owl, tests/unitaires/bon-de-commande/test_cRepoBonDeCommandeMemoire.owl, tests/integration/bon-de-commande/test_cRepoBonDeCommandeSql.owl, app/services/bon-de-commande/cServiceBonDeCommande.owl, tests/unitaires/bon-de-commande/test_cServiceBonDeCommande.owl, app/domaine/bon-de-commande/ressource.json, database/factories/bon-de-commande/cFabriqueBonDeCommande.owl, app/http/bon-de-commande/ControleurBonDeCommande.owl", "chemins")
+	dbgVérifieEgalité(EbListeVirgules(EbFichiersRessource(oDemande)), "app/domaine/bon-de-commande/cBonDeCommande.owl, app/domaine/bon-de-commande/ContratsBonDeCommande.owl, app/donnees/bon-de-commande/cRepoBonDeCommandeMemoire.owl, app/donnees/bon-de-commande/cRepoBonDeCommandeSql.owl, tests/unitaires/bon-de-commande/test_cBonDeCommande.owl, tests/unitaires/bon-de-commande/test_cRepoBonDeCommandeMemoire.owl, tests/integration/bon-de-commande/test_cRepoBonDeCommandeSql.owl, app/services/bon-de-commande/cServiceBonDeCommande.owl, tests/unitaires/bon-de-commande/test_cServiceBonDeCommande.owl, app/domaine/bon-de-commande/ressource.json, database/factories/bon-de-commande/cFabriqueBonDeCommande.owl, app/http/bon-de-commande/CorpsBonDeCommande.owl, app/http/bon-de-commande/ControleurBonDeCommande.owl", "chemins")
 FIN
 
 // Chaque fichier produit est en LF, sans tabulation en fin de ligne, et se termine par un saut de ligne.

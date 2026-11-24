@@ -67,8 +67,9 @@ Elle donne un **500** à la première requête qui lit la description (un `POST`
 
 ## Pièges courants
 
-- **Un champ du mauvais type devient 0 ou le texte vide**, sans erreur : `"note":"abc"` est lu comme 0, et une décimale envoyée pour un entier est tronquée. C'est une limite de la lecture du JSON dans OWL ; envoyez le type attendu.
-- **Un `null` explicite compte comme présent** : il donne la valeur par défaut du type.
-- **Une valeur égale à la valeur d'absence** (`__absent__`, `-999999999`, `-999999999.5`, `-1` pour un booléen) est prise pour un champ absent.
+- **Un champ du mauvais type est refusé** : `"note":"abc"` ou `"note":"12"` donne `422` (« doit être un nombre »), tout comme une décimale pour un entier (`2.7`, mais aussi `5.0`) ou `1` pour un booléen. Le contrôle porte sur le texte reçu, pas sur une valeur déjà convertie.
+- **Un `null` n'est permis que pour un champ `nullable`** : il donne alors la valeur par défaut du type. Pour un autre champ, c'est un `422`.
+- **Un texte vide ou d'espaces** n'est pas une valeur pour un champ obligatoire (`422`) ; il est permis pour un champ `nullable` ou muni d'un `defaut`, et alors aucune règle ne s'applique.
+- **Les clés JSON** ne distinguent pas la casse (`NOM` remplit `nom`), et un champ inconnu de la description est ignoré. Une colonne dont le nom a des espaces ou des accents (`date naissance`) s'envoie sous sa clé en minuscules reliées par `_` (`date_naissance`).
 - **Une faute de syntaxe dans `motif`** n'est pas détectée : le champ refuse alors toutes les valeurs, ce qui se voit au premier essai.
 - **Pour les autres règles** (règles entre deux champs, par exemple), ajoutez vos contrôles dans le service, ou dans `Cree<Nom>`, `Modifie<Nom>` et `Corrige<Nom>` du contrôleur : ces fichiers sont à vous.

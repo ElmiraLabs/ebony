@@ -1,0 +1,201 @@
+// Tests de cEbSchema : l'enchaînement, ce que le schéma sait de ses champs, les schémas fautifs refusés à la construction (exception 500 qui nomme le champ et la règle), et l'export JSON.
+// La validation d'un corps par un schéma est testée dans test_EbPoinconValidation.owl.
+
+// Construit un schéma fautif selon le cas et rend « code|message » de l'exception, ou « aucune exception ». Un cas par schéma fautif : une variable déclarée dans une branche d'un SELON est interdite, d'où une procédure par cas.
+PROCEDURE EbTestSchemaFautifRegleSansChamp() : cEbSchema
+	oSch est un cEbSchema
+	oSch.Min(3)
+	RENVOYER oSch
+FIN
+
+PROCEDURE EbTestSchemaFautifMauvaisType() : cEbSchema
+	oSch est un cEbSchema
+	oSch.Texte("nom").Min(3)
+	RENVOYER oSch
+FIN
+
+PROCEDURE EbTestSchemaFautifLongueurSurEntier() : cEbSchema
+	oSch est un cEbSchema
+	oSch.NombreEntier("age").LongueurMax(3)
+	RENVOYER oSch
+FIN
+
+PROCEDURE EbTestSchemaFautifDoublon() : cEbSchema
+	oSch est un cEbSchema
+	oSch.Texte("nom")
+	oSch.NombreEntier("nom")
+	RENVOYER oSch
+FIN
+
+PROCEDURE EbTestSchemaFautifBornes() : cEbSchema
+	oSch est un cEbSchema
+	oSch.NombreEntier("age").Min(10).Max(5)
+	RENVOYER oSch
+FIN
+
+PROCEDURE EbTestSchemaFautifLongueurs() : cEbSchema
+	oSch est un cEbSchema
+	oSch.Texte("nom").LongueurMax(3).LongueurMin(5)
+	RENVOYER oSch
+FIN
+
+PROCEDURE EbTestSchemaFautifDefautEntier() : cEbSchema
+	oSch est un cEbSchema
+	oSch.NombreEntier("age").Defaut("abc")
+	RENVOYER oSch
+FIN
+
+PROCEDURE EbTestSchemaFautifDefautDate() : cEbSchema
+	oSch est un cEbSchema
+	oSch.DateIso("jour").Defaut("2026-02-30")
+	RENVOYER oSch
+FIN
+
+PROCEDURE EbTestSchemaFautifValeursEntier() : cEbSchema
+	oSch est un cEbSchema
+	oSch.NombreEntier("niveau").Valeurs("1|a")
+	RENVOYER oSch
+FIN
+
+PROCEDURE EbTestSchemaFautifNomVide() : cEbSchema
+	oSch est un cEbSchema
+	oSch.Texte("  ")
+	RENVOYER oSch
+FIN
+
+PROCEDURE EbTestSchemaFautifMotifSurEntier() : cEbSchema
+	oSch est un cEbSchema
+	oSch.NombreEntier("age").Motif("^[0-9]+$")
+	RENVOYER oSch
+FIN
+
+// Rend « code|message » de l'exception levée par la construction du schéma fautif, selon le cas (nom de la procédure sans le préfixe).
+PROCEDURE EbTestRefusSchema(sCas est une chaîne) : chaîne
+	sRes est une chaîne = "aucune exception"
+	QUAND EXCEPTION DANS
+		SELON sCas
+			CAS "RegleSansChamp"
+			EbTestSchemaFautifRegleSansChamp()
+			CAS "MauvaisType"
+			EbTestSchemaFautifMauvaisType()
+			CAS "LongueurSurEntier"
+			EbTestSchemaFautifLongueurSurEntier()
+			CAS "Doublon"
+			EbTestSchemaFautifDoublon()
+			CAS "Bornes"
+			EbTestSchemaFautifBornes()
+			CAS "Longueurs"
+			EbTestSchemaFautifLongueurs()
+			CAS "DefautEntier"
+			EbTestSchemaFautifDefautEntier()
+			CAS "DefautDate"
+			EbTestSchemaFautifDefautDate()
+			CAS "ValeursEntier"
+			EbTestSchemaFautifValeursEntier()
+			CAS "NomVide"
+			EbTestSchemaFautifNomVide()
+			CAS "MotifSurEntier"
+			EbTestSchemaFautifMotifSurEntier()
+		FIN
+	FAIRE
+		sRes = ExceptionInfo(errCode) + "|" + ExceptionInfo(errMessage)
+	FIN
+	RENVOYER sRes
+FIN
+
+// L'enchaînement garde l'ordre des champs et le type de chacun.
+PROCEDURE scenario_champs_et_types()
+	oSch est un cEbSchema
+	oSch.Texte("nom").LongueurMin(3)
+	oSch.NombreReel("prix")
+	oSch.NombreEntier("stock")
+	oSch.VraiFaux("actif")
+	oSch.DateIso("sortie")
+	oSch.DateHeureIso("maj")
+	tabNoms est un tableau de chaînes = oSch.Noms()
+	dbgVérifieEgalité(tabNoms..Occurrence, 6, "six champs")
+	dbgVérifieEgalité(tabNoms[1], "nom", "premier champ")
+	dbgVérifieEgalité(tabNoms[6], "maj", "dernier champ")
+	dbgVérifieEgalité(oSch.TypeDe("nom"), "texte", "type texte")
+	dbgVérifieEgalité(oSch.TypeDe("prix"), "reel", "type réel")
+	dbgVérifieEgalité(oSch.TypeDe("stock"), "entier", "type entier")
+	dbgVérifieEgalité(oSch.TypeDe("actif"), "booleen", "type booléen")
+	dbgVérifieEgalité(oSch.TypeDe("sortie"), "date", "type date")
+	dbgVérifieEgalité(oSch.TypeDe("maj"), "dateheure", "type date et heure")
+	dbgVérifieEgalité(oSch.TypeDe("inconnu"), "", "un champ inconnu n'a pas de type")
+FIN
+
+// Les règles posées se relisent, celles qui ne le sont pas ne dérangent pas (0 ou texte vide : une comparaison avec ET n'a pas de court-circuit, donc jamais Null).
+PROCEDURE scenario_regles_relues()
+	oSch est un cEbSchema
+	oSch.Texte("nom").LongueurMin(3).LongueurMax(10).Motif("^[A-Z]")
+	oSch.NombreEntier("stock").Min(0).Max(100).Valeurs("1|2|3")
+	dbgVérifieVrai(oSch.ARegle("nom", "longueurMin"), "longueurMin posée")
+	dbgVérifieEgalité(oSch.Regle("nom", "longueurMin"), 3, "valeur de longueurMin")
+	dbgVérifieEgalité(oSch.Regle("nom", "longueurMax"), 10, "valeur de longueurMax")
+	dbgVérifieVrai(PAS oSch.ARegle("nom", "min"), "min non posée sur nom")
+	dbgVérifieEgalité(oSch.Regle("nom", "min"), 0, "une règle non posée vaut 0")
+	dbgVérifieEgalité(oSch.RegleTexte("nom", "motif"), "^[A-Z]", "motif")
+	dbgVérifieEgalité(oSch.RegleTexte("nom", "valeurs"), "", "une règle texte non posée vaut le texte vide")
+	dbgVérifieEgalité(oSch.RegleTexte("stock", "valeurs"), "|1|2|3|", "valeurs de l'entier")
+	dbgVérifieEgalité(oSch.Regle("stock", "max"), 100, "max")
+FIN
+
+// Facultatif permet de manquer ET d'être null ; Defaut permet de manquer seulement ; sans l'un ni l'autre le champ est obligatoire.
+PROCEDURE scenario_absence_et_null()
+	oSch est un cEbSchema
+	oSch.Texte("a")
+	oSch.Texte("b").Facultatif()
+	oSch.NombreEntier("c").Defaut("5")
+	dbgVérifieVrai(PAS oSch.PeutManquer("a"), "a est obligatoire")
+	dbgVérifieVrai(PAS oSch.PeutEtreNul("a"), "a ne peut pas être null")
+	dbgVérifieVrai(oSch.PeutManquer("b"), "b peut manquer")
+	dbgVérifieVrai(oSch.PeutEtreNul("b"), "b peut être null")
+	dbgVérifieVrai(oSch.PeutManquer("c"), "c peut manquer")
+	dbgVérifieVrai(PAS oSch.PeutEtreNul("c"), "c ne peut pas être null")
+	dbgVérifieEgalité(oSch.RegleTexte("c", "defaut"), "5", "le défaut de c")
+FIN
+
+// Facultatif puis Defaut garde la permission de null : le défaut ne retire rien.
+PROCEDURE scenario_facultatif_et_defaut_ensemble()
+	oSch est un cEbSchema
+	oSch.Texte("a").Facultatif().Defaut("x")
+	dbgVérifieVrai(oSch.PeutEtreNul("a"), "null reste permis")
+	dbgVérifieEgalité(oSch.RegleTexte("a", "defaut"), "x", "le défaut est gardé")
+FIN
+
+// La cible n'est connue que si on l'a posée.
+PROCEDURE scenario_cible()
+	oSch est un cEbSchema
+	oSch.Texte("nom")
+	dbgVérifieVrai(PAS oSch.ACible(), "pas de cible au départ")
+	stCible est un stEbTestProduit
+	oSch.Cible(stCible)
+	dbgVérifieVrai(oSch.ACible(), "cible posée")
+FIN
+
+// Un schéma fautif est refusé À LA CONSTRUCTION, par un 500 qui nomme le champ et la règle : jamais ignoré, jamais découvert à la première requête.
+PROCEDURE scenario_schema_fautif_refuse_a_la_construction()
+	dbgVérifieEgalité(Gauche(EbTestRefusSchema("RegleSansChamp"), 4), "500|", "code 500")
+	dbgVérifieVrai(Position(EbTestRefusSchema("RegleSansChamp"), "« min » n'a pas de champ") > 0, "règle sans champ")
+	dbgVérifieVrai(Position(EbTestRefusSchema("MauvaisType"), "« min » ne s'applique pas au champ « nom » (type texte)") > 0, "min sur un texte")
+	dbgVérifieVrai(Position(EbTestRefusSchema("LongueurSurEntier"), "« longueurMax » ne s'applique pas au champ « age » (type entier)") > 0, "longueurMax sur un entier")
+	dbgVérifieVrai(Position(EbTestRefusSchema("MotifSurEntier"), "« motif » ne s'applique pas au champ « age »") > 0, "motif sur un entier")
+	dbgVérifieVrai(Position(EbTestRefusSchema("Doublon"), "le champ « nom » est déclaré deux fois") > 0, "nom en double")
+	dbgVérifieVrai(Position(EbTestRefusSchema("NomVide"), "le nom d'un champ ne peut pas être vide") > 0, "nom vide")
+	dbgVérifieVrai(Position(EbTestRefusSchema("Bornes"), "« min » dépasse « max » pour le champ « age »") > 0, "bornes à l'envers")
+	dbgVérifieVrai(Position(EbTestRefusSchema("Longueurs"), "« longueurMin » dépasse « longueurMax » pour le champ « nom »") > 0, "longueurs à l'envers")
+	dbgVérifieVrai(Position(EbTestRefusSchema("DefautEntier"), "« defaut » du champ « age » doit être un entier") > 0, "défaut d'entier incorrect")
+	dbgVérifieVrai(Position(EbTestRefusSchema("DefautDate"), "« defaut » du champ « jour » doit être une date AAAA-MM-JJ") > 0, "défaut de date incorrect")
+	dbgVérifieVrai(Position(EbTestRefusSchema("ValeursEntier"), "« valeurs » du champ « niveau » doit être une liste d'entiers") > 0, "valeurs d'entier incorrectes")
+FIN
+
+// Les bornes égales ne sont pas une faute (min = max), et l'ordre d'écriture des bornes est indifférent.
+PROCEDURE scenario_bornes_egales_ou_dans_l_autre_ordre()
+	oSch est un cEbSchema
+	oSch.NombreEntier("a").Min(5).Max(5)
+	oSch.NombreEntier("b").Max(9).Min(2)
+	dbgVérifieEgalité(oSch.Regle("a", "min"), 5, "a min")
+	dbgVérifieEgalité(oSch.Regle("b", "min"), 2, "b min")
+	dbgVérifieEgalité(oSch.Regle("b", "max"), 9, "b max")
+FIN

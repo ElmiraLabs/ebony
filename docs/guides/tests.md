@@ -77,11 +77,11 @@ Posé dans `tests/unitaires/perso/test_prix.owl`, il est trouvé et exécuté. P
 
 - **`--filter` porte sur le nom du fichier, et la casse compte.** Un nom qui ne correspond à rien répond `ALL CLEAR (0 suites, 0 assertions)` avec le code **0**. Ce n'est pas une réussite : vérifiez toujours le nombre de suites, surtout dans un script.
 - **Une variable déclarée au niveau d'un fichier de test** est une globale de tout le projet. Si une variable locale d'un autre fichier porte le même nom, `owl test` plante avec une erreur de compilation dans un fichier voisin. Donnez à ces variables un préfixe `g` (`gBase`).
-- **Un `ServiceREST` dont le bloc déclare une variable d'une classe du projet** fait planter `owl test` (« Variable inconnue »). Le service généré ne le fait pas : construisez le repository et le service **dans** la route (voir [Générer : make](make.md)).
+- **Un `ServiceREST` dont le bloc déclare une variable d'une classe du projet** fait planter `owl test` (« Variable inconnue »). Le service généré ne le fait pas : construisez le repository et le service **dans** la route.
 - **`owl test` recompile le projet pour chaque suite** : sa durée croît avec la taille du projet. Pendant que vous écrivez, utilisez `--filter` pour ne lancer que la suite qui vous intéresse.
 
 ## Ce que les tests générés ne couvrent pas
 
-- **Les routes HTTP.** Aucun test généré n'envoie de requête : pour vérifier une route, lancez le service et appelez-le (voir les [premiers pas](premiers-pas.md)).
+- **Les routes HTTP.** Aucun test généré n'envoie de requête : pour vérifier une route, lancez le service et appelez-le.
 - **Vos règles** : le service généré passe les appels au repository, vos règles ont besoin de vos tests.
 - **PostgreSQL** : le test du repository SQL tourne sur SQLite en mémoire.

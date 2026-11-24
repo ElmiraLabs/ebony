@@ -27,7 +27,7 @@ Toutes les commandes d'écriture (`new`, `init`, `add`, `make`) acceptent `--dry
 
 ## `make`
 
-Les options, les fichiers écrits et la grammaire de `--champs` sont dans [make](make.md). Les routes que génère `make resource` sont décrites dans [les routes générées](routes-generees.md).
+Le guide détaillé de `ebony make` (options, fichiers écrits, grammaire de `--champs`) est en cours de réécriture.
 
 ## `migrate`
 

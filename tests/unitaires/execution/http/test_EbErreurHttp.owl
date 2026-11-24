@@ -4,6 +4,7 @@
 PROCEDURE scenario_statut_de_chaque_code()
 	dbgVérifieEgalité(EbStatutHttpDeCode("400"), httpRequêteIncorrecte, "400 : requête incorrecte")
 	dbgVérifieEgalité(EbStatutHttpDeCode("422"), 422, "422 : données invalides")
+	dbgVérifieEgalité(EbStatutHttpDeCode("415"), httpTypeMédiaNonSupporté, "415 : le corps n'est pas du JSON")
 	dbgVérifieEgalité(EbStatutHttpDeCode("401"), httpNonAutorisé, "401 : non autorisé")
 	dbgVérifieEgalité(EbStatutHttpDeCode("404"), httpNonTrouvé, "404 : non trouvé")
 	dbgVérifieEgalité(EbStatutHttpDeCode("409"), httpConflit, "409 : conflit")
@@ -18,6 +19,23 @@ PROCEDURE scenario_corps_des_erreurs_du_client()
 	dbgVérifieEgalité(EbCorpsErreurHttp("422", "Le champ « nom » est obligatoire."), `{"code":"invalide","message":"Le champ « nom » est obligatoire."}`, "422 : même corps que 400 : invalide, message de la route")
 	dbgVérifieEgalité(EbCorpsErreurHttp("404", "Client introuvable : 9"), `{"code":"introuvable","message":"Client introuvable : 9"}`, "404 : introuvable, message du repository")
 	dbgVérifieEgalité(EbCorpsErreurHttp("409", "Client déjà présent : 1"), `{"code":"conflit","message":"Client déjà présent : 1"}`, "409 : conflit, message du repository")
+FIN
+
+// 422 avec le détail posé pour CE message : « erreurs » s'ajoute après « message ». Sans détail, ou pour un autre message, le corps reste { code, message }. 400 ne porte jamais de détail.
+PROCEDURE scenario_corps_du_422_avec_detail()
+	cEbDetailErreur.Pose("Champ obligatoire absent : nom.", `[{"champ":"nom","regle":"absent","message":"Le champ « nom » est obligatoire."}]`)
+	dbgVérifieEgalité(EbCorpsErreurHttp("422", "Champ obligatoire absent : nom."), `{"code":"invalide","message":"Champ obligatoire absent : nom.","erreurs":[{"champ":"nom","regle":"absent","message":"Le champ « nom » est obligatoire."}]}`, "422 : le détail suit le message")
+	dbgVérifieEgalité(EbCorpsErreurHttp("422", "Champ obligatoire absent : nom."), `{"code":"invalide","message":"Champ obligatoire absent : nom."}`, "le détail n'est rendu qu'une fois")
+	cEbDetailErreur.Pose("Message A", `[{"champ":"a"}]`)
+	dbgVérifieEgalité(EbCorpsErreurHttp("422", "Message B"), `{"code":"invalide","message":"Message B"}`, "un 422 levé à la main ne reçoit pas le détail d'une autre validation")
+	cEbDetailErreur.Pose("Message A", `[{"champ":"a"}]`)
+	dbgVérifieEgalité(EbCorpsErreurHttp("400", "Message A"), `{"code":"invalide","message":"Message A"}`, "400 : jamais de détail")
+	dbgVérifieEgalité(EbCorpsErreurHttp("422", "Message A"), `{"code":"invalide","message":"Message A","erreurs":[{"champ":"a"}]}`, "le détail posé attendait toujours son message")
+FIN
+
+// 415 : code « type_non_supporte », avec le message de l'exception.
+PROCEDURE scenario_corps_du_415()
+	dbgVérifieEgalité(EbCorpsErreurHttp("415", "Le corps doit être envoyé en JSON."), `{"code":"type_non_supporte","message":"Le corps doit être envoyé en JSON."}`, "415 : type_non_supporte, message de l'exception")
 FIN
 
 // 401 : message fixe, qui ne dit pas pourquoi le jeton est refusé (absent, inconnu, expiré ou révoqué se valent pour le client).
@@ -40,6 +58,7 @@ FIN
 PROCEDURE scenario_erreur_du_serveur_ou_du_client()
 	dbgVérifieFaux(EbEstErreurServeurHttp("400"), "400 : client")
 	dbgVérifieFaux(EbEstErreurServeurHttp("422"), "422 : client")
+	dbgVérifieFaux(EbEstErreurServeurHttp("415"), "415 : client, jamais journalisée comme une erreur du serveur")
 	dbgVérifieFaux(EbEstErreurServeurHttp("401"), "401 : client")
 	dbgVérifieFaux(EbEstErreurServeurHttp("404"), "404 : client")
 	dbgVérifieFaux(EbEstErreurServeurHttp("409"), "409 : client")

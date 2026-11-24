@@ -39,8 +39,8 @@ export default defineConfig({
     logo: '/logo-ebony.png',
     nav: [
       { text: 'Installation', link: '/guides/installation' },
-      { text: 'Premiers pas', link: '/guides/premiers-pas' },
       { text: 'Commandes', link: '/guides/commandes' },
+      { text: 'Feuille de route', link: 'https://github.com/ElmiraLabs/ebony/blob/main/ROADMAP.md' },
       { text: 'Notes de version', link: 'https://github.com/ElmiraLabs/ebony/releases' }
     ],
     sidebar: [
@@ -50,9 +50,6 @@ export default defineConfig({
           { text: 'Introduction', link: '/guides/introduction' },
           { text: 'Installation', link: '/guides/installation' },
           { text: 'Ebony sous Linux', link: '/guides/linux' },
-          { text: 'Premiers pas', link: '/guides/premiers-pas' },
-          { text: "Structure d'un projet", link: '/guides/structure' },
-          { text: 'Tutoriel : une petite boutique', link: '/guides/tutoriel' },
           { text: 'Adopter Ebony dans un projet existant', link: '/guides/adopter-un-projet' },
           { text: 'Ajouter un module', link: '/guides/ajouter-un-module' }
         ]
@@ -62,8 +59,6 @@ export default defineConfig({
         items: [
           { text: 'Configuration', link: '/guides/configuration' },
           { text: 'ebony.conf', link: '/guides/ebony-conf' },
-          { text: 'Ajouter une route', link: '/guides/routes' },
-          { text: 'Erreurs', link: '/guides/erreurs' },
           { text: 'Tests', link: '/guides/tests' },
           { text: 'Déployer', link: '/guides/deployer' },
           { text: 'Dépanner', link: '/guides/depanner' },
@@ -75,16 +70,12 @@ export default defineConfig({
         text: 'Base de données',
         items: [
           { text: 'Migrations', link: '/guides/migrate' },
-          { text: 'Générer : make', link: '/guides/make' },
-          { text: 'Les routes générées', link: '/guides/routes-generees' },
-          { text: 'La description : ressource.json', link: '/guides/ressource-json' },
-          { text: 'Le code généré, fichier par fichier', link: '/guides/code-genere' }
+          { text: 'La description : ressource.json', link: '/guides/ressource-json' }
         ]
       },
       {
         text: 'Concepts',
         items: [
-          { text: "Le chemin d'une requête", link: '/guides/architecture' },
           { text: 'Modules et kits', link: '/guides/modules' },
           { text: "Où en est Ebony", link: '/guides/statut-et-limites' },
           { text: 'Performance', link: '/guides/performance-et-limites' }

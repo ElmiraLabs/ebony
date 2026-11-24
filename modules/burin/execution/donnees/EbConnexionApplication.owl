@@ -1,6 +1,15 @@
 // La connexion SQL réelle d'une application, configurée d'après le type de base du projet (sqlite, postgresql, hfsql) et les variables de l'environnement chargé (voir cEbApplication).
 EbConnexionApplication est une CollectionDeProcédures
 
+	// Quand la cause d'un échec de connexion parle de TLS ou de SSL, la conduite à tenir (« » sinon) : OWL exige par défaut un TLS vérifié (« anti-déclassement »), donc un serveur de développement local SANS TLS est refusé avec un message qui ressemble à une erreur d'authentification.
+	// Le réglage existe : DB_TLS dans .env. Formulé en CONDITIONS, pas en accusation : pour une cible locale OWL ajoute lui-même un conseil sur ModeTLS à toute panne de connexion, donc le TLS n'est parfois qu'une hypothèse. Écrit pour le journal du service (démarrage, sonde de /api/health) et pour « ebony migrate », qui disent la même chose.
+	PROCEDURE EbBaseIndiceTls(sCause est une chaîne) : chaîne
+		SI Position(Majuscule(sCause), "TLS") > 0 OU Position(Majuscule(sCause), "SSL") > 0 ALORS
+			RENVOYER " Si le serveur est local et sans TLS : DB_TLS=desactive dans .env ; avec un certificat d'autorité interne : DB_CERTIFICAT_CA et DB_TLS=ca."
+		FIN
+		RENVOYER ""
+	FIN
+
 	// Le niveau TLS d'OWL pour la valeur de DB_TLS : verifie (défaut d'OWL : certificat et nom vérifiés), ca (chaîne vérifiée, pas le nom), accepte (chiffré, certificat non vérifié), desactive (aucun TLS).
 	// Une valeur inconnue donne le niveau le plus strict, jamais un niveau plus faible (le schéma de config/env.json refuse déjà toute autre valeur).
 	PROCEDURE EbModeTlsDeConfig(sValeur est une chaîne) : entier

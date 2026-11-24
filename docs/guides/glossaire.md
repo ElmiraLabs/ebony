@@ -5,7 +5,7 @@ Les mots d'ebony, dans l'ordre où une requête les traverse. Certains (service,
 | Mot | Sens dans ebony |
 |---|---|
 | **OWL** | Le langage de programmation dans lequel Ebony et les projets générés sont écrits (mots-clés français, commande `owl`). Sans rapport avec l'OWL du W3C, le Web Ontology Language des ontologies ; Ebony n'est pas affilié à l'équipe d'OWL. |
-| **Route** | Une adresse et une méthode HTTP (`GET /api/clients/12`). C'est une `OpérationHTTP` d'un contrôleur (ou d'un `ServiceREST` que vous écrivez : voir [Ajouter une route](routes.md)). |
+| **Route** | Une adresse et une méthode HTTP (`GET /api/clients/12`). C'est une `OpérationHTTP` d'un contrôleur (ou d'un `ServiceREST` que vous écrivez). |
 | **Contrôleur** | La porte d'entrée HTTP d'une ressource : il déclare ses routes, **vérifie ce que le client envoie** (corps, clé) et répond en JSON. Fichier généré : `app/http/<dossier>/Controleur<Nom>.owl`. Il ne contient pas de règle métier. |
 | **Service** (métier) | Les règles de l'application (« un client inactif ne peut pas commander »). Ne sait rien du HTTP. Il appelle le repository ; le contrôleur appelle le service, jamais le repository. Fichier généré : `app/services/<dossier>/cService<Nom>.owl`, mince au départ (il passe les appels au repository) : c'est là que vous ajoutez vos règles. |
 | **Repository** | Le seul endroit qui parle à la base pour une entité : lire, ajouter, modifier, supprimer. Contrat `iRepo<Nom>`, adaptateurs `cRepo<Nom>Sql` et `cRepo<Nom>Memoire`. |

@@ -21,12 +21,9 @@ EbSortieMigrate est une CollectionDeProcédures
 		RENVOYER tabNotes
 	FIN
 
-	// Quand la cause parle de TLS, la conduite à tenir : OWL exige un TLS vérifié, un serveur local de développement sans TLS demande DB_TLS=desactive. « » sinon.
+	// Quand la cause parle de TLS, la conduite à tenir (le texte est celui du service : EbBaseIndiceTls, bibliothèque de Burin). « » sinon.
 	PROCEDURE EbIndiceTls(sCause est une chaîne) : chaîne
-		SI Position(Majuscule(sCause), "TLS") > 0 OU Position(Majuscule(sCause), "SSL") > 0 ALORS
-			RENVOYER " Le TLS est en cause : un serveur de développement local sans TLS demande DB_TLS=desactive dans .env ; un certificat d'autorité interne, DB_CERTIFICAT_CA et DB_TLS=ca."
-		FIN
-		RENVOYER ""
+		RENVOYER EbBaseIndiceTls(sCause)
 	FIN
 
 	// Le statut en français.

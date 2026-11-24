@@ -1,6 +1,6 @@
 # Les chemins du depot de developpement qui vont dans l'instantane public.
 # Un chemin par ligne ; un dossier se termine par « / ». Lu par scripts/publie-instantane.ps1 ET scripts/controle-instantane.ps1 : une seule liste.
-# Regle supplementaire, appliquee par les deux scripts : aucun fichier .md dans l'instantane, sauf README.md a la racine et les guides d'usage de docs/guides/ (listes une par une : un guide n'est publie que quand il est pret).
+# Regle supplementaire, appliquee par les deux scripts : aucun fichier .md dans l'instantane, sauf README.md et ROADMAP.md a la racine et les guides d'usage de docs/guides/ (listes une par une : un guide n'est publie que quand il est pret).
 # Tout ce qui n'est pas ici reste dans le depot de developpement (consignes de travail, documents de conception, notes de versions, README de dossiers, dossier tmp).
 bin/
 modules/
@@ -12,14 +12,11 @@ assets/
 docs/guides/installation.md
 docs/guides/adopter-un-projet.md
 docs/guides/ajouter-un-module.md
-docs/guides/premiers-pas.md
-docs/guides/tutoriel.md
-docs/guides/architecture.md
-docs/guides/erreurs.md
 docs/guides/commandes.md
 docs/guides/modules.md
 docs/guides/configuration.md
 README.md
+ROADMAP.md
 LICENSE
 projet.owl
 ebony.owl
@@ -38,19 +35,14 @@ docs/public/
 .github/CODE_OF_CONDUCT.md
 .github/SECURITY.md
 docs/guides/linux.md
-docs/guides/make.md
-docs/guides/routes-generees.md
 docs/guides/ressource-json.md
 docs/guides/compatibilite.md
-docs/guides/code-genere.md
 docs/guides/migrate.md
 docs/guides/token.md
 docs/guides/journalisation.md
 docs/guides/glossaire.md
 docs/guides/performance-et-limites.md
 docs/guides/introduction.md
-docs/guides/structure.md
-docs/guides/routes.md
 docs/guides/statut-et-limites.md
 docs/guides/deployer.md
 docs/guides/depanner.md

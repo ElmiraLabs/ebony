@@ -198,6 +198,7 @@ EbContenuRessource est une CollectionDeProcédures
 		TableauAjoute(tabFichiers, EbCheminFabrique(oDemande))
 		tabSansRoutes est un tableau de chaînes = EbChampsSansRoutes(oDemande)
 		SI tabSansRoutes..Occurrence = 0 ALORS
+			TableauAjoute(tabFichiers, EbCheminCorps(oDemande))
 			TableauAjoute(tabFichiers, EbCheminRoutes(oDemande))
 		FIN
 		RENVOYER tabFichiers
@@ -228,6 +229,8 @@ EbContenuRessource est une CollectionDeProcédures
 			RENVOYER EbContenuDescription(oDemande)
 			CAS 11
 			RENVOYER EbContenuFabriqueRessource(oDemande)
+			CAS 12
+			RENVOYER EbContenuCorps(oDemande)
 			AUTRE CAS
 			RENVOYER EbContenuRoutes(oDemande)
 		FIN

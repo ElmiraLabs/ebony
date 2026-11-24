@@ -14,3 +14,17 @@ PROCEDURE scenario_valeur_inconnue_reste_stricte()
 	dbgVérifieEgalité(EbModeTlsDeConfig(""), tlsVerifieComplet, "une valeur vide")
 	dbgVérifieEgalité(EbModeTlsDeConfig("DESACTIVE"), tlsVerifieComplet, "la casse compte : le schéma exige la valeur exacte")
 FIN
+
+// L'indice quand la cause d'un échec de connexion parle de TLS ou de SSL : il nomme DB_TLS, DB_CERTIFICAT_CA et .env ; sinon rien, pour ne pas accuser le TLS d'une autre panne.
+PROCEDURE scenario_indice_tls_selon_la_cause()
+	sAnti est une chaîne = EbBaseIndiceTls("SQLConnexionOuvre (Postgres): ssl: serveur refuse TLS (anti-déclassement : on échoue)")
+	dbgVérifieVrai(Position(sAnti, "DB_TLS=desactive") > 0, "TLS en cause : le réglage est nommé")
+	dbgVérifieVrai(Position(sAnti, "Si le serveur est local et sans TLS") > 0, "en conditions, pas en accusation")
+	dbgVérifieVrai(Position(sAnti, ".env") > 0, "et le fichier où le poser")
+	dbgVérifieVrai(Position(sAnti, "DB_CERTIFICAT_CA") > 0, "et le cas d'une autorité interne")
+	dbgVérifieVrai(Position(EbBaseIndiceTls("handshake SSL échoué"), "DB_TLS") > 0, "SSL aussi, quelle que soit la casse")
+	dbgVérifieVrai(Position(EbBaseIndiceTls("tls: certificate verify failed"), "DB_TLS") > 0, "TLS en minuscules")
+	dbgVérifieEgalité(EbBaseIndiceTls("connexion refusée (la base est arrêtée)"), "", "une autre cause : aucun indice")
+	dbgVérifieEgalité(EbBaseIndiceTls("authentification échouée pour l'utilisateur u"), "", "une erreur d'authentification n'est pas accusée de TLS")
+	dbgVérifieEgalité(EbBaseIndiceTls(""), "", "cause vide : aucun indice")
+FIN

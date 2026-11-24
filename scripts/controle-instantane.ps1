@@ -15,7 +15,7 @@ Set-Location $racine
 
 # La liste des chemins publics est celle de publie-instantane.ps1 : une seule source.
 $inclus = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'instantane-liste.txt') -Encoding UTF8 | Where-Object { $_.Trim() -ne '' -and -not $_.StartsWith('#') } | ForEach-Object { $_.Trim() })
-$fichiers = @(& git ls-files | Where-Object { $chemin = $_; @($inclus | Where-Object { $chemin -eq $_ -or ($_.EndsWith('/') -and $chemin.StartsWith($_)) }).Count -gt 0 } | Where-Object { $_ -eq 'README.md' -or $_ -eq 'docs/index.md' -or $_.StartsWith('docs/guides/') -or $_ -in @('.github/CONTRIBUTING.md', '.github/CODE_OF_CONDUCT.md', '.github/SECURITY.md') -or -not $_.EndsWith('.md') })   # aucun .md public sauf le README racine, docs/guides/ et les trois fichiers de la communaute de .github/
+$fichiers = @(& git ls-files | Where-Object { $chemin = $_; @($inclus | Where-Object { $chemin -eq $_ -or ($_.EndsWith('/') -and $chemin.StartsWith($_)) }).Count -gt 0 } | Where-Object { $_ -eq 'README.md' -or $_ -eq 'ROADMAP.md' -or $_ -eq 'docs/index.md' -or $_.StartsWith('docs/guides/') -or $_ -in @('.github/CONTRIBUTING.md', '.github/CODE_OF_CONDUCT.md', '.github/SECURITY.md') -or -not $_.EndsWith('.md') })   # aucun .md public sauf le README et la feuille de route (ROADMAP.md) a la racine, docs/guides/ et les trois fichiers de la communaute de .github/
 
 # Chaque motif : un nom, une expression (insensible a la casse), et ce qu'on y fait. Ce fichier-ci est exclu de l'analyse (il cite les motifs).
 $motifs = @(

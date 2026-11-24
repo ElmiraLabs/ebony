@@ -28,6 +28,8 @@ Inspiré d'AdonisJS, pour le langage de programmation [OWL](https://github.com/f
 Une commande crée un projet qui compile et démarre sous `owl serve`. Une autre écrit, pour une table, l'entité, les repositories, le service métier, le contrôleur REST et les tests, avec des routes protégées par jeton. Le code généré est lisible et reste le vôtre.
 
 > **Préversion 0.1.5.** Ebony crée en une seule commande une API REST pour OWL. Cette version est une préversion : elle peut encore évoluer.
+>
+> **Le cœur est en chantier** : un routeur, un contexte de requête et des middlewares, à la manière d'AdonisJS, sont en construction. Plusieurs guides sont retirés le temps de les réécrire. Voir la [feuille de route](ROADMAP.md).
 
 ## Installation
 
@@ -74,15 +76,13 @@ Puis, dans un second terminal (le secret du jeton à la place de `eb_…`) :
 curl.exe -s -H "Authorization: Bearer eb_…" http://127.0.0.1:8080/api/produits       # []
 ```
 
-Sans jeton, la même requête répond **401**. Sous Linux : `cp` à la place de `Copy-Item`. Le [parcours détaillé](https://elmiralabs.github.io/ebony/guides/premiers-pas) explique chaque étape.
+Sans jeton, la même requête répond **401**. Sous Linux : `cp` à la place de `Copy-Item`.
 
 ## Documentation
 
 **Toute la documentation est sur [elmiralabs.github.io/ebony](https://elmiralabs.github.io/ebony/).** Pour commencer :
 
 - [Introduction](https://elmiralabs.github.io/ebony/guides/introduction) : ce qu'est Ebony, ses kits et sa philosophie.
-- [Premiers pas](https://elmiralabs.github.io/ebony/guides/premiers-pas) et le [tutoriel d'une petite boutique](https://elmiralabs.github.io/ebony/guides/tutoriel).
-- [Structure d'un projet](https://elmiralabs.github.io/ebony/guides/structure) : où est quoi, pour chaque kit.
 - [Référence des commandes](https://elmiralabs.github.io/ebony/guides/commandes) et [les modules](https://elmiralabs.github.io/ebony/guides/modules).
 - [Adopter Ebony dans un projet existant](https://elmiralabs.github.io/ebony/guides/adopter-un-projet).
 

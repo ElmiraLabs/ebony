@@ -639,15 +639,15 @@ try {
         Verifie "code 0" ($r.Code -eq 0) "code=$($r.Code) $($r.Sortie)"
         $mkJson = $null; try { $mkJson = $r.Sortie.Trim() | ConvertFrom-Json } catch { }
         Verifie "une seule ligne JSON : ok, command, name, table, dryRun" (($r.Sortie.Trim() -notmatch "[\r\n]") -and $mkJson -and ($mkJson.ok -eq $true) -and ($mkJson.command -eq 'make resource') -and ($mkJson.name -eq 'Client') -and ($mkJson.table -eq 'clients') -and ($mkJson.dryRun -eq $true)) $r.Sortie
-        Verifie "created : douze fichiers, kept vide" ($mkJson -and (@($mkJson.created).Count -eq 12) -and (@($mkJson.kept).Count -eq 0) -and (@($mkJson.created)[0] -eq 'app/domaine/client/cClient.owl')) $r.Sortie
+        Verifie "created : treize fichiers, kept vide" ($mkJson -and (@($mkJson.created).Count -eq 13) -and (@($mkJson.kept).Count -eq 0) -and (@($mkJson.created)[0] -eq 'app/domaine/client/cClient.owl')) $r.Sortie
         Verifie "rien n'est ecrit : ni app\domaine ni tests" (-not (Test-Path -LiteralPath (Join-Path $mkP 'app\domaine')) -and -not (Test-Path -LiteralPath (Join-Path $mkP 'tests'))) ''
 
         Write-Host "  make resource Client"
         $r = Lance $mkP @('make', 'resource', 'Client', '--champs', $mkChamps, '--json')
         Verifie "code 0" ($r.Code -eq 0) "code=$($r.Code) $($r.Sortie)"
         $mkJson = $null; try { $mkJson = $r.Sortie.Trim() | ConvertFrom-Json } catch { }
-        Verifie "dryRun faux, douze fichiers crees" ($mkJson -and ($mkJson.dryRun -eq $false) -and (@($mkJson.created).Count -eq 12)) $r.Sortie
-        Verifie "les douze fichiers existent, chemins relatifs au projet" (-not (@($mkJson.created) | Where-Object { -not (Test-Path -LiteralPath (Join-Path $mkP ($_ -replace '/', '\'))) })) $r.Sortie
+        Verifie "dryRun faux, treize fichiers crees" ($mkJson -and ($mkJson.dryRun -eq $false) -and (@($mkJson.created).Count -eq 13)) $r.Sortie
+        Verifie "les treize fichiers existent, chemins relatifs au projet" (-not (@($mkJson.created) | Where-Object { -not (Test-Path -LiteralPath (Join-Path $mkP ($_ -replace '/', '\'))) })) $r.Sortie
         Verifie "aucun BOM ni CRLF dans les fichiers ecrits" (-not (@($mkJson.created) | Where-Object { $b = [IO.File]::ReadAllBytes((Join-Path $mkP ($_ -replace '/', '\'))); ($b.Length -ge 3 -and $b[0] -eq 0xEF) -or ([Text.Encoding]::UTF8.GetString($b).Contains("`r")) })) ''
         $mkEntite = Join-Path $mkP 'app\domaine\client\cClient.owl'
         $mkHashEntite = (Get-FileHash -LiteralPath $mkEntite).Hash
@@ -695,9 +695,9 @@ try {
         $r = Lance $mkP @('make', 'resource', 'Client', '--champs', $mkChamps, '--json')
         Verifie "code 0" ($r.Code -eq 0) "code=$($r.Code) $($r.Sortie)"
         $mkJson4 = $null; try { $mkJson4 = $r.Sortie.Trim() | ConvertFrom-Json } catch { }
-        Verifie "created vide, douze fichiers dans kept, une note par fichier" ($mkJson4 -and (@($mkJson4.created).Count -eq 0) -and (@($mkJson4.kept).Count -eq 12) -and ((@($mkJson4.notes) | Where-Object { $_ -match 'existe d' }).Count -eq 12)) $r.Sortie
+        Verifie "created vide, treize fichiers dans kept, une note par fichier" ($mkJson4 -and (@($mkJson4.created).Count -eq 0) -and (@($mkJson4.kept).Count -eq 13) -and ((@($mkJson4.notes) | Where-Object { $_ -match 'existe d' }).Count -eq 13)) $r.Sortie
         Verifie "le fichier de l'utilisateur est intact (meme SHA-256)" ((Get-FileHash -LiteralPath $mkEntite).Hash -eq $mkHashEntite) ''
-        Verifie "un controleur a jour ne donne aucune note 'avant le Poincon'" ((@($mkJson4.notes) | Where-Object { $_ -match 'avant le Poin' }).Count -eq 0) $r.Sortie
+        Verifie "un controleur a jour ne donne aucune note 'avant la validation du corps brut'" ((@($mkJson4.notes) | Where-Object { $_ -match 'avant la validation' }).Count -eq 0) $r.Sortie
 
         # Adoption : une ressource generee avant ressource.json (et avant le Poincon) a un controleur ancien et pas de description. Relancer la meme commande ecrit la description, garde le controleur, et dit comment l'adopter.
         Write-Host "  une ressource d'avant ressource.json : la meme commande ecrit la description, garde l'ancien controleur et le signale"
@@ -712,7 +712,7 @@ try {
             $mkJsonAdopte = $null; try { $mkJsonAdopte = $r.Sortie.Trim() | ConvertFrom-Json } catch { }
             Verifie "code 0, ressource.json recree (seul fichier cree), les onze autres conserves" (($r.Code -eq 0) -and $mkJsonAdopte -and (@($mkJsonAdopte.created).Count -eq 1) -and (@($mkJsonAdopte.created)[0] -eq 'app/domaine/client/ressource.json') -and (@($mkJsonAdopte.kept).Count -eq 11)) "code=$($r.Code) $($r.Sortie)"
             Verifie "la description recreee est celle d'origine, octet pour octet" ([IO.File]::ReadAllText($mkDescriptionAdoption) -ceq $mkDescriptionNeuve) ''
-            Verifie "le controleur ancien est intact et une note dit qu'il ne lit pas ressource.json et comment l'adopter" (([IO.File]::ReadAllText($mkControleur) -ceq "// controleur d'avant le Poincon`n") -and ((@($mkJsonAdopte.notes) | Where-Object { ($_ -match 'avant le Poin') -and ($_ -match 'supprimez ce fichier') }).Count -eq 1)) $r.Sortie
+            Verifie "le controleur ancien est intact, le fichier du corps n'est pas ecrit a cote, et une note dit pourquoi et comment l'adopter" (([IO.File]::ReadAllText($mkControleur) -ceq "// controleur d'avant le Poincon`n") -and ((@($mkJsonAdopte.notes) | Where-Object { ($_ -match 'avant la validation du corps brut') -and ($_ -match 'supprimez ce fichier') -and ($_ -match 'PAS \S+crit') }).Count -eq 1)) $r.Sortie
         } finally { [IO.File]::WriteAllText($mkControleur, $mkControleurNeuf, (New-Object Text.UTF8Encoding($false))); [IO.File]::WriteAllText($mkDescriptionAdoption, $mkDescriptionNeuve, (New-Object Text.UTF8Encoding($false))) }
 
         Write-Host "  erreurs d'usage : une ligne, pas de pile d'appels, code 2"
@@ -734,7 +734,7 @@ try {
             $mkPs = ((& $ebony make resource Produit --champs id:entier*,nom:texte,prix:reel --dry-run --json 2>&1) | ForEach-Object { "$_" }) -join ' '
             $ErrorActionPreference = 'Stop'
             $mkJsonPs = $null; try { $mkJsonPs = $mkPs.Trim() | ConvertFrom-Json } catch { }
-            Verifie "les trois champs sont lus : douze fichiers dans created" ($mkJsonPs -and ($mkJsonPs.ok -eq $true) -and (@($mkJsonPs.created).Count -eq 12)) $mkPs
+            Verifie "les trois champs sont lus : treize fichiers dans created" ($mkJsonPs -and ($mkJsonPs.ok -eq $true) -and (@($mkJsonPs.created).Count -eq 13)) $mkPs
         } finally { $ErrorActionPreference = 'Stop'; Pop-Location }
         Write-Host "  migrate : appliquer, lister, defaire, refuser, sur la vraie base SQLite du projet"
         # La table existe-t-elle vraiment dans le fichier de la base ? Un petit programme OWL, SEUL dans son dossier, la cherche. Ce dossier est dans le dossier temporaire du systeme : sous le depot (tmp\.travail compris),
@@ -806,6 +806,7 @@ try {
             Verifie "POST : 201, la cle est donnee par la base, les valeurs du corps sont relues" (($rq.Code -eq 201) -and $rq.Json -and ($rq.Json.id -eq 1) -and ($rq.Json.nom -eq 'Ada') -and ($rq.Json.email -eq 'a@x.fr') -and ($rq.Json.actif -eq $true) -and ($rq.Json.note -eq 12.5) -and ($rq.Json.naissance -eq '1990-01-02')) ("code=" + $rq.Code + " " + $rq.Corps)
             $rq = MkRequete $mkServeur 'POST' '/api/clients' '{"nom":"Bob"}'
             Verifie "POST sans les champs obligatoires : 422, UNE reponse qui nomme TOUS les champs absents (actif, note), rien d'ecrit" (($rq.Code -eq 422) -and $rq.Json -and ($rq.Json.code -eq 'invalide') -and ($rq.Json.message -match 'actif') -and ($rq.Json.message -match 'note') -and ($rq.Json.message -notmatch 'nom') -and (@((MkRequete $mkServeur 'GET' '/api/clients').Json).Count -eq 1)) ("code=" + $rq.Code + " " + $rq.Corps)
+            Verifie "ce 422 porte aussi erreurs : une entree par champ en faute (actif puis note, dans l'ordre des champs), avec champ, regle et message" ($rq.Json -and (@($rq.Json.erreurs).Count -eq 2) -and ($rq.Json.erreurs[0].champ -eq 'actif') -and ($rq.Json.erreurs[0].regle -eq 'absent') -and ($rq.Json.erreurs[0].message -match 'actif') -and ($rq.Json.erreurs[1].champ -eq 'note')) ("code=" + $rq.Code + " " + $rq.Corps)
             $rq = MkRequete $mkServeur 'POST' '/api/clients' '{"nom":"Bob","actif":false,"note":0}'
             Verifie "POST avec faux et zero : 201, ce sont des VALEURS (pas des absences) ; le champ facultatif absent (email) prend la valeur par defaut du type" (($rq.Code -eq 201) -and $rq.Json -and ($rq.Json.id -eq 2) -and ($rq.Json.email -eq '') -and ($rq.Json.actif -eq $false) -and ($rq.Json.note -eq 0)) ("code=" + $rq.Code + " " + $rq.Corps)
             $rq = MkRequete $mkServeur 'GET' '/api/clients'
@@ -825,6 +826,10 @@ try {
             Verifie "liste : un filtre sans correspondance (valeur decodee : UTF-8 en pourcentage) rend une liste vide" (($rq.Code -eq 200) -and (@($rq.Json.donnees).Count -eq 0) -and ($rq.Json.meta.total -eq 0)) ("code=" + $rq.Code + " " + $rq.Corps)
             $rq = MkRequete $mkServeur 'GET' '/api/clients?page=0&limite=500&tri=inconnu&ordre=haut&filtre_note=abc'
             Verifie "liste : criteres mal formes, UN seul 400 qui les nomme tous (page, limite, ordre, filtre_note, tri), rien n'est avale" (($rq.Code -eq 400) -and $rq.Json -and ($rq.Json.code -eq 'invalide') -and ($rq.Json.message -match 'page') -and ($rq.Json.message -match 'limite') -and ($rq.Json.message -match 'ordre') -and ($rq.Json.message -match 'filtre_note') -and ($rq.Json.message -match 'tri')) ("code=" + $rq.Code + " " + $rq.Corps)
+            $rq = MkRequete $mkServeur 'GET' '/api/clients?nom=Ada&userId=2'
+            Verifie "liste : des parametres inconnus (nom au lieu de filtre_nom, userId) sont refuses en 400 qui les nomme et dit les permis, au lieu de rendre toute la table" (($rq.Code -eq 400) -and $rq.Json -and ($rq.Json.code -eq 'invalide') -and ($rq.Json.message -match 'nom, userId') -and ($rq.Json.message -match 'filtre_nom') -and ($rq.Json.message -match 'page, limite, tri, ordre')) ("code=" + $rq.Code + " " + $rq.Corps)
+            $rq = MkRequete $mkServeur 'GET' '/api/clients?page=1&limite=5&tri=nom&ordre=desc&filtre_nom=Ada'
+            Verifie "liste : tous les parametres connus passent (page, limite, tri, ordre, filtre_<colonne>)" ($rq.Code -eq 200) ("code=" + $rq.Code + " " + $rq.Corps)
             $rq = MkRequete $mkServeur 'GET' '/api/clients?page=2'
             Verifie "liste : page=2 avec une limite par defaut (20) : vide, les defauts d'OWL sont absents mais les criteres les rendent" (($rq.Code -eq 200) -and (@($rq.Json.donnees).Count -eq 0) -and ($rq.Json.meta.limite -eq 20) -and ($rq.Json.meta.page -eq 2)) ("code=" + $rq.Code + " " + $rq.Corps)            $rq = MkRequete $mkServeur 'GET' '/api/clients/1'
             $rq = MkRequete $mkServeur 'GET' '/api/clients/1'
@@ -855,13 +860,23 @@ try {
             $rq = MkRequete $mkServeur 'PATCH' '/api/clients/999' '{"note":1}'
             Verifie "PATCH d'une cle absente : 404 { code: introuvable }" (($rq.Code -eq 404) -and $rq.Json -and ($rq.Json.code -eq 'introuvable') -and ($rq.Json.message -match '999')) ("code=" + $rq.Code + " " + $rq.Corps)
             $rq = MkRequete $mkServeur 'PATCH' '/api/clients/1' '{"note":"abc"}'
-            Verifie "LIMITE D'OWL, dite : un champ du mauvais type n'est pas detecte, il devient 0 (PATCH {note: abc} : 200, note 0)" (($rq.Code -eq 200) -and $rq.Json -and ($rq.Json.note -eq 0)) ("code=" + $rq.Code + " " + $rq.Corps)
+            Verifie "un champ du mauvais type est REFUSE (le corps brut est valide) : PATCH {note: abc} : 422 qui nomme le champ, la note n'a pas change" (($rq.Code -eq 422) -and $rq.Json -and ($rq.Json.code -eq 'invalide') -and ($rq.Json.message -match 'note') -and ((MkRequete $mkServeur 'GET' '/api/clients/1').Json.note -eq 12.5)) ("code=" + $rq.Code + " " + $rq.Corps)
             $rq = MkRequete $mkServeur 'PATCH' '/api/clients/1' '{"note":12.5}'
             Verifie "la note est remise a 12.5 pour la suite" (($rq.Code -eq 200) -and $rq.Json -and ($rq.Json.note -eq 12.5)) ("code=" + $rq.Code + " " + $rq.Corps)
             $rq = MkRequete $mkServeur 'POST' '/api/clients' 'ceci n est pas du json'
-            Verifie "POST d'un corps qui n'est pas du JSON : 400 (refuse par OWL avant la route)" ($rq.Code -eq 400) ("code=" + $rq.Code + " " + $rq.Corps)
+            Verifie "POST d'un corps qui n'est pas du JSON : 400 { code: invalide } avec notre message (le corps brut est lu dans la route)" (($rq.Code -eq 400) -and $rq.Json -and ($rq.Json.code -eq 'invalide') -and ($rq.Json.message -match 'pas du JSON') -and ($rq.Json.PSObject.Properties.Name -notcontains 'erreurs')) ("code=" + $rq.Code + " " + $rq.Corps)
             $rq = MkRequete $mkServeur 'POST' '/api/clients' '{"nom":"X"}' 'text/plain'
-            Verifie "POST avec un autre type de contenu : 415 (refuse par OWL avant la route)" ($rq.Code -eq 415) ("code=" + $rq.Code + " " + $rq.Corps)
+            Verifie "POST avec un autre type de contenu (text/plain) : 415 { code: type_non_supporte } avec notre message, refuse avant de lire le corps" (($rq.Code -eq 415) -and $rq.Json -and ($rq.Json.code -eq 'type_non_supporte') -and ($rq.Json.message -match 'application/json')) ("code=" + $rq.Code + " " + $rq.Corps)
+            $rq = MkRequete $mkServeur 'POST' '/api/clients' '{"nom":"X"}' 'application/x-www-form-urlencoded'
+            Verifie "POST en formulaire (ce que curl -d envoie sans -H) : 415 aussi" ($rq.Code -eq 415) ("code=" + $rq.Code + " " + $rq.Corps)
+            $rq = MkRequete $mkServeur 'PUT' '/api/clients/1' '{"nom":"X"}' 'text/plain'
+            Verifie "PUT avec un autre type de contenu : 415" ($rq.Code -eq 415) ("code=" + $rq.Code + " " + $rq.Corps)
+            $rq = MkRequete $mkServeur 'PATCH' '/api/clients/1' '{"nom":"X"}' 'text/plain'
+            Verifie "PATCH avec un autre type de contenu : 415" ($rq.Code -eq 415) ("code=" + $rq.Code + " " + $rq.Corps)
+            $rq = MkRequete $mkServeur 'POST' '/api/clients' '{"nom":"X"}' 'application/json; charset=utf-8'
+            Verifie "POST en application/json avec un parametre (charset) : accepte, puis valide (422 : champs absents, rien n'est ecrit)" (($rq.Code -eq 422) -and $rq.Json -and ($rq.Json.code -eq 'invalide')) ("code=" + $rq.Code + " " + $rq.Corps)
+            $rq = MkRequete $mkServeur 'POST' '/api/clients' '{"nom":"X"}' 'application/merge-patch+json'
+            Verifie "POST en application/<x>+json : accepte aussi (422 : champs absents)" ($rq.Code -eq 422) ("code=" + $rq.Code + " " + $rq.Corps)
             # Le Poincon : les regles viennent de ressource.json, RELU a chaque requete. Le fichier est modifie pendant que le service tourne, sans regenerer le controleur, puis remis tel qu'ecrit.
             $mkDescription = Join-Path $mkP 'app\domaine\client\ressource.json'
             $mkDescriptionOrigine = [IO.File]::ReadAllText($mkDescription)
@@ -897,7 +912,7 @@ try {
         } finally { MkArrete $mkServeur }
         Start-Sleep -Milliseconds 500
         $mkJournal = ''; if (Test-Path -LiteralPath $mkServeur.Sortie) { $mkJournal = Get-Content -Raw -Encoding UTF8 -LiteralPath $mkServeur.Sortie }
-        Verifie "le journal du service ne porte aucune erreur : 400, 404 et 415 sont des erreurs du client, pas du serveur" ($mkJournal -notmatch '"niveau":"error"') $mkJournal
+        Verifie "le journal du service ne porte aucune erreur : 400, 404, 415 et 422 sont des erreurs du client, pas du serveur" ($mkJournal -notmatch '"niveau":"error"') $mkJournal
 
         # Une regle inconnue dans ressource.json (ici une faute de frappe) est une erreur du PROJET, pas du client : 500 sans rien d'interne dans la reponse, et le journal nomme le fichier, le champ et la regle.
         Write-Host "  Poincon : une regle inconnue dans ressource.json : 500, le journal dit laquelle"
@@ -1042,7 +1057,7 @@ try {
         $mkPays = Join-Path $mkA 'pays'
         $mkChampsPays = 'code:texte*,nom:texte,creation:date?'
         $r = Lance $mkPays @('make', 'resource', 'Pays', '--champs', $mkChampsPays, '--table', 'pays', '--json')
-        Verifie "make resource Pays : code 0, douze fichiers dont le controleur, la description et la fabrique" (($r.Code -eq 0) -and ($r.Sortie -match 'app/http/pays/ControleurPays\.owl') -and ($r.Sortie -match 'app/domaine/pays/ressource\.json')) "code=$($r.Code) $($r.Sortie)"
+        Verifie "make resource Pays : code 0, treize fichiers dont le controleur, le corps, la description et la fabrique" (($r.Code -eq 0) -and ($r.Sortie -match 'app/http/pays/ControleurPays\.owl') -and ($r.Sortie -match 'app/domaine/pays/ressource\.json')) "code=$($r.Code) $($r.Sortie)"
         # La migration SANS --champs : elle lit la description que make resource vient d'ecrire (la table est celle de --table pays, retrouvee par la table et non par le nom).
         $r = Lance $mkPays @('make', 'migration', 'CreePays', '--json')
         Verifie "make migration CreePays sans --champs : code 0, lit app/domaine/pays/ressource.json" (($r.Code -eq 0) -and ($r.Sortie -match 'database/migrations/M\d{12}_CreePays\.owl')) "code=$($r.Code) $($r.Sortie)"

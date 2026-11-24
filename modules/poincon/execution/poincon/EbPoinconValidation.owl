@@ -1,0 +1,298 @@
+// La validation d'un corps de requête BRUT d'après un schéma en chaîne (cEbSchema). Trois entrées :
+//   EbPoinconValide(schéma, corps, partiel) : Structure   valide, puis rend l'objet du type de la cible du schéma (comme « validated » de VineJS) ; lève 400 ou 422 sinon.
+//   EbPoinconVerifie(schéma, corps, partiel)              valide seulement (pas de cible exigée).
+//   EbPoinconErreurs(schéma, jCorps, partiel)             rend la LISTE des erreurs (cEbErreurValidation), sans rien lever : pour tester ou pour formater soi-même.
+// Le corps est le TEXTE reçu (MoiMême..Requête..Body) : OWL a déjà converti les valeurs d'une structure liée (« abc » devient 0), le texte brut seul permet de voir un mauvais type. Une route qui appelle EbPoinconValide n'a donc PAS de paramètre de structure.
+// 400 : le corps est vide, n'est pas du JSON, ou n'est pas un objet. 422 : données invalides, UNE seule réponse qui nomme tout (les champs absents d'abord, puis les autres erreurs). partiel = Vrai pour un PATCH : un champ absent n'est pas une erreur.
+// Un champ présent est toujours contrôlé : son type (« 12 » n'est pas un nombre, 2.7 n'est pas un entier, 5.0 non plus), null (refusé sauf Facultatif), puis ses règles. Les champs inconnus du schéma sont ignorés.
+// Les messages par défaut sont TOUS dans EbValidationMessage (les messages personnalisés, version future, y brancheront). Les fonctions ne lisent aucun fichier ni aucune requête : elles ne dépendent que de leurs arguments.
+EbPoinconValidation est une CollectionDeProcédures
+
+	// ---- Les messages par défaut ----
+
+	// Le message d'une erreur : sRegle est « absent », « null », « type-texte », « type-nombre », « type-entier », « type-booleen », « date », « dateheure », ou une règle du schéma ; sDetail est le complément (une borne, la liste des valeurs).
+	PROCEDURE EbValidationMessage(sRegle est une chaîne, sChamp est une chaîne, sDetail est une chaîne) : chaîne
+		sDebut est une chaîne = "Le champ « " + sChamp + " » "
+		SELON sRegle
+			CAS "absent"
+			RENVOYER sDebut + "est obligatoire. "
+			CAS "null"
+			RENVOYER sDebut + "ne peut pas être null. "
+			CAS "vide"
+			RENVOYER sDebut + "ne peut pas être vide. "
+			CAS "type-texte"
+			RENVOYER sDebut + "doit être un texte. "
+			CAS "type-nombre"
+			RENVOYER sDebut + "doit être un nombre. "
+			CAS "type-entier"
+			RENVOYER sDebut + "doit être un entier (sans décimale). "
+			CAS "type-booleen"
+			RENVOYER sDebut + "doit être vrai ou faux. "
+			CAS "date"
+			RENVOYER sDebut + "doit être une date au format AAAA-MM-JJ. "
+			CAS "dateheure"
+			RENVOYER sDebut + "doit être une date et une heure au format AAAA-MM-JJTHH:MM:SS. "
+			CAS "longueurMin"
+			RENVOYER sDebut + "doit avoir au moins " + sDetail + " caractères. "
+			CAS "longueurMax"
+			RENVOYER sDebut + "dépasse " + sDetail + " caractères. "
+			CAS "min"
+			RENVOYER sDebut + "doit être supérieur ou égal à " + sDetail + ". "
+			CAS "max"
+			RENVOYER sDebut + "doit être inférieur ou égal à " + sDetail + ". "
+			CAS "valeurs"
+			RENVOYER sDebut + "doit valoir l'une de ces valeurs : " + sDetail + ". "
+			CAS "motif"
+			RENVOYER sDebut + "n'a pas la forme attendue. "
+		FIN
+		RENVOYER sDebut + "est incorrect. "
+	FIN
+
+	// ---- Le contrôle ----
+
+	// Une erreur construite (une variable locale à chaque appel : OWL ne construit pas en ligne).
+	PROCEDURE EbValidationErreur(sChamp est une chaîne, sRegle est une chaîne, sDetail est une chaîne) : cEbErreurValidation
+		oErreur est un cEbErreurValidation(sChamp, sRegle, EbValidationMessage(sRegle, sChamp, sDetail))
+		RENVOYER oErreur
+	FIN
+
+	// Les valeurs permises d'une règle « |a|b| » écrites « a, b ».
+	PROCEDURE EbValidationListe(sValeurs est une chaîne) : chaîne
+		RENVOYER Remplace(Milieu(sValeurs, 2, Taille(sValeurs) - 2), "|", ", ")
+	FIN
+
+	// Les erreurs d'un champ de type texte, date ou date et heure PRÉSENT et non null.
+	PROCEDURE EbValidationTexte(oSch est un cEbSchema, jCorps est un JSON, sNom est une chaîne) : tableau de cEbErreurValidation
+		tabRes est un tableau de cEbErreurValidation
+		sType  est une chaîne                        = oSch.TypeDe(sNom)
+		SI TypeVar(jCorps[sNom]) <> 16 ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "type-texte", ""))
+			RENVOYER tabRes
+		FIN
+		sValeur est une chaîne = jCorps[sNom]
+		// Un texte vide (ou d'espaces) n'est pas une valeur pour un champ obligatoire ; permis pour un champ Facultatif ou muni d'un Defaut, et alors aucune autre règle ne s'applique.
+		SI SansEspace(sValeur) = "" ALORS
+			SI PAS oSch.PeutManquer(sNom) ALORS
+				TableauAjoute(tabRes, EbValidationErreur(sNom, "vide", ""))
+			FIN
+			RENVOYER tabRes
+		FIN
+		SI sType = "date" ET PAS EbDateIsoValide(sValeur) ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "date", ""))
+		FIN
+		SI sType = "dateheure" ET PAS EbDateHeureIsoValide(sValeur) ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "dateheure", ""))
+		FIN
+		SI oSch.ARegle(sNom, "longueurMin") ET Taille(sValeur) < oSch.Regle(sNom, "longueurMin") ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "longueurMin", "" + oSch.Regle(sNom, "longueurMin")))
+		FIN
+		SI oSch.ARegle(sNom, "longueurMax") ET Taille(sValeur) > oSch.Regle(sNom, "longueurMax") ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "longueurMax", "" + oSch.Regle(sNom, "longueurMax")))
+		FIN
+		SI oSch.ARegleTexte(sNom, "valeurs") ET Position(oSch.RegleTexte(sNom, "valeurs"), "|" + sValeur + "|") < 1 ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "valeurs", EbValidationListe(oSch.RegleTexte(sNom, "valeurs"))))
+		FIN
+		SI oSch.ARegleTexte(sNom, "motif") ET PAS RegexVérifie(sValeur, oSch.RegleTexte(sNom, "motif")) ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "motif", ""))
+		FIN
+		RENVOYER tabRes
+	FIN
+
+	// Les erreurs d'un champ entier ou réel PRÉSENT et non null. Un entier refuse une décimale (2.7, mais aussi 5.0 : OWL lit un nombre écrit avec une décimale comme un réel).
+	PROCEDURE EbValidationNombre(oSch est un cEbSchema, jCorps est un JSON, sNom est une chaîne) : tableau de cEbErreurValidation
+		tabRes est un tableau de cEbErreurValidation
+		nType  est un entier                         = TypeVar(jCorps[sNom])
+		SI nType <> 7 ET nType <> 8 ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "type-nombre", ""))
+			RENVOYER tabRes
+		FIN
+		SI oSch.TypeDe(sNom) = "entier" ET nType = 7 ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "type-entier", ""))
+			RENVOYER tabRes
+		FIN
+		rValeur est un réel = jCorps[sNom]
+		SI oSch.ARegle(sNom, "min") ET rValeur < oSch.Regle(sNom, "min") ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "min", "" + oSch.Regle(sNom, "min")))
+		FIN
+		SI oSch.ARegle(sNom, "max") ET rValeur > oSch.Regle(sNom, "max") ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "max", "" + oSch.Regle(sNom, "max")))
+		FIN
+		SI oSch.ARegleTexte(sNom, "valeurs") ET Position(oSch.RegleTexte(sNom, "valeurs"), "|" + rValeur + "|") < 1 ALORS
+			TableauAjoute(tabRes, EbValidationErreur(sNom, "valeurs", EbValidationListe(oSch.RegleTexte(sNom, "valeurs"))))
+		FIN
+		RENVOYER tabRes
+	FIN
+
+	// Les erreurs d'un champ du schéma dans un corps déjà analysé.
+	PROCEDURE EbValidationChamp(oSch est un cEbSchema, jCorps est un JSON, sNom est une chaîne, bPartiel est un booléen) : tableau de cEbErreurValidation
+		tabRes est un tableau de cEbErreurValidation
+		SI PAS JSONExiste(jCorps, sNom) ALORS
+			SI PAS bPartiel ET PAS oSch.PeutManquer(sNom) ALORS
+				TableauAjoute(tabRes, EbValidationErreur(sNom, "absent", ""))
+			FIN
+			RENVOYER tabRes
+		FIN
+		nType est un entier = TypeVar(jCorps[sNom])
+		SI nType = 0 ALORS
+			SI PAS oSch.PeutEtreNul(sNom) ALORS
+				TableauAjoute(tabRes, EbValidationErreur(sNom, "null", ""))
+			FIN
+			RENVOYER tabRes
+		FIN
+		sType est une chaîne = oSch.TypeDe(sNom)
+		SI sType = "entier" OU sType = "reel" ALORS
+			RENVOYER EbValidationNombre(oSch, jCorps, sNom)
+		FIN
+		SI sType = "booleen" ALORS
+			SI nType <> 1 ALORS
+				TableauAjoute(tabRes, EbValidationErreur(sNom, "type-booleen", ""))
+			FIN
+			RENVOYER tabRes
+		FIN
+		RENVOYER EbValidationTexte(oSch, jCorps, sNom)
+	FIN
+
+	// La liste des erreurs d'un corps déjà analysé (un objet JSON), dans l'ordre des champs du schéma. Vide : le corps est valide.
+	PROCEDURE EbPoinconErreurs(oSch est un cEbSchema, jCorps est un JSON, bPartiel est un booléen) : tableau de cEbErreurValidation
+		tabRes est un tableau de cEbErreurValidation
+		POUR TOUT sNom DE oSch.Noms()
+			POUR TOUT oErreur DE EbValidationChamp(oSch, jCorps, sNom, bPartiel)
+				TableauAjoute(tabRes, oErreur)
+			FIN
+		FIN
+		RENVOYER tabRes
+	FIN
+
+	// ---- Les réponses ----
+
+	// Le détail structuré des erreurs, en texte JSON : un tableau [ { "champ", "regle", "message" }, … ], une entrée par erreur dans l'ordre des champs du schéma (le message sans l'espace final).
+	// Un client s'en sert pour montrer chaque message près de son champ. Rien n'est ajouté pour un 400 (requête mal formée : il n'y a pas de champ en faute).
+	PROCEDURE EbValidationDetail(tabErreurs est un tableau de cEbErreurValidation) : chaîne
+		sRes    est une chaîne = ""
+		jErreur est un JSON
+		POUR TOUT oErreur DE tabErreurs
+			jErreur["champ"] = oErreur.Champ()
+			jErreur["regle"] = oErreur.Regle()
+			jErreur["message"] = SansEspace(oErreur.Message())
+			SI sRes <> "" ALORS
+				sRes += ","
+			FIN
+			sRes += JSONVersChaîne(jErreur, psdMinifie)
+		FIN
+		RENVOYER "[" + sRes + "]"
+	FIN
+
+	// Lève un 422 qui nomme TOUT : les champs obligatoires absents (« Champs obligatoires absents : a, b. »), puis les autres erreurs. Ne fait rien si la liste est vide.
+	// Le détail structuré (EbValidationDetail) est posé avec le message pour que la réponse HTTP le porte (cEbDetailErreur, repris par EbCorpsErreurHttp) ; le message de l'exception reste le texte simple.
+	PROCEDURE EbValidationRefuse(tabErreurs est un tableau de cEbErreurValidation)
+		sAbsents est une chaîne = ""
+		sAutres  est une chaîne = ""
+		POUR TOUT oErreur DE tabErreurs
+			SI oErreur.Regle() = "absent" ALORS
+				SI sAbsents <> "" ALORS
+					sAbsents += ", "
+				FIN
+				sAbsents += oErreur.Champ()
+			SINON
+				sAutres += oErreur.Message()
+			FIN
+		FIN
+		SI sAbsents = "" ET sAutres = "" ALORS
+			RENVOYER
+		FIN
+		sMessage est une chaîne = ""
+		SI Position(sAbsents, ",") > 0 ALORS
+			sMessage = "Champs obligatoires absents : " + sAbsents + ". "
+		SINON SI sAbsents <> "" ALORS
+			sMessage = "Champ obligatoire absent : " + sAbsents + ". "
+		FIN
+		sFinal est une chaîne = SansEspace(sMessage + sAutres)
+		cEbDetailErreur.Pose(sFinal, EbValidationDetail(tabErreurs))
+		ExceptionDéclenche(422, sFinal)
+	FIN
+
+	// Vrai si le type de contenu est du JSON : « application/json » ou « application/<x>+json » (par exemple application/merge-patch+json), casse et paramètres ignorés (« ; charset=utf-8 »).
+	PROCEDURE EbPoinconTypeJson(sTypeContenu est une chaîne) : booléen
+		sType         est une chaîne = Minuscule(sTypeContenu)
+		nPointVirgule est un entier  = Position(sType, ";")
+		SI nPointVirgule > 0 ALORS
+			sType = Gauche(sType, nPointVirgule - 1)
+		FIN
+		sType = SansEspace(sType)
+		SI sType = "application/json" ALORS
+			RENVOYER Vrai
+		FIN
+		RENVOYER Taille(sType) > 17 ET Gauche(sType, 12) = "application/" ET Droite(sType, 5) = "+json"
+	FIN
+
+	// Refuse (415) un corps qui n'est pas annoncé en JSON : le Content-Type de la requête (MoiMême..Requête..Entêtes["Content-Type"], passé par la route : MoiMême ne passe pas à une procédure) doit être du JSON.
+	// ABSENT ou vide : accepté, comme le faisait OWL pour un paramètre de structure (un client qui n'envoie pas d'en-tête n'est pas refusé) ; la forme du corps est ensuite contrôlée par EbPoinconVerifie (400 si ce n'est pas du JSON).
+	// Un type explicite autre que JSON (text/plain, application/x-www-form-urlencoded, ce que « curl -d » envoie sans -H) est refusé AVANT de lire le corps. Le message ne cite pas le type reçu.
+	PROCEDURE EbPoinconExigeJson(sTypeContenu est une chaîne)
+		SI sTypeContenu = Null ALORS
+			RENVOYER
+		FIN
+		SI SansEspace(sTypeContenu) = "" ALORS
+			RENVOYER
+		FIN
+		SI PAS EbPoinconTypeJson(sTypeContenu) ALORS
+			ExceptionDéclenche(415, "Le corps doit être envoyé en JSON : l'en-tête Content-Type doit être application/json.")
+		FIN
+	FIN
+
+	// Valide le corps (le texte reçu) : 400 s'il est vide, n'est pas du JSON ou n'est pas un objet ; 422 s'il contient des erreurs. Ne rend rien.
+	PROCEDURE EbPoinconVerifie(oSch est un cEbSchema, sCorps est une chaîne, bPartiel est un booléen)
+		SI SansEspace(sCorps) = "" ALORS
+			ExceptionDéclenche(400, "Le corps de la requête est vide.")
+		FIN
+		SI PAS JSONValide(sCorps) ALORS
+			ExceptionDéclenche(400, "Le corps de la requête n'est pas du JSON.")
+		FIN
+		SI PAS RegexVérifie(sCorps, "^\s*\{") ALORS
+			ExceptionDéclenche(400, "Le corps de la requête doit être un objet JSON.")
+		FIN
+		jCorps est un JSON = ChaîneVersJSON(sCorps)
+		EbValidationRefuse(EbPoinconErreurs(oSch, jCorps, bPartiel))
+	FIN
+
+	// Valide le corps puis rend l'objet du type de la cible du schéma (cEbSchema.Cible) : les champs absents ou null y valent la valeur par défaut du type. Lève comme EbPoinconVerifie.
+	// L'appelant écrit lui-même le type : « stOk est un stProduit = EbPoinconValide(…) » ; un autre type que celui de la cible est accepté sans erreur et donne un objet vide (limite d'OWL : le générateur écrit la paire).
+	PROCEDURE EbPoinconValide(oSch est un cEbSchema, sCorps est une chaîne, bPartiel est un booléen) : Structure
+		SI PAS oSch.ACible() ALORS
+			ExceptionDéclenche(500, "Poinçon : le schéma n'a pas de cible (Cible(variable d'une structure)).")
+		FIN
+		EbPoinconVerifie(oSch, sCorps, bPartiel)
+		jCorps est un JSON = ChaîneVersJSON(sCorps)
+		SI PAS bPartiel ALORS
+			jCorps = EbValidationAvecDefauts(oSch, jCorps)
+		FIN
+		RENVOYER JSONDésérialise(JSONVersChaîne(jCorps, psdMinifie), oSch.Modele())
+	FIN
+
+	// Une copie du corps où chaque champ ABSENT qui a un Defaut reçoit cette valeur (typée d'après le champ). Le texte reçu n'est pas modifié. Pas appelée pour un PATCH : un champ absent y garde la ligne actuelle.
+	PROCEDURE EbValidationAvecDefauts(oSch est un cEbSchema, jCorps est un JSON) : JSON
+		jRes    est un JSON    = ChaîneVersJSON(JSONVersChaîne(jCorps, psdMinifie))
+		nEntier est un entier  = 0
+		rReel   est un réel    = 0
+		bVrai   est un booléen = Faux
+		POUR TOUT sNom DE oSch.Noms()
+			SI PAS JSONExiste(jRes, sNom) ET oSch.ARegleTexte(sNom, "defaut") ALORS
+				sDefaut est une chaîne = oSch.RegleTexte(sNom, "defaut")
+				sType   est une chaîne = oSch.TypeDe(sNom)
+				SI sType = "entier" ALORS
+					nEntier = Val(sDefaut)
+					jRes[sNom] = nEntier
+				SINON SI sType = "reel" ALORS
+					rReel = Val(sDefaut)
+					jRes[sNom] = rReel
+				SINON SI sType = "booleen" ALORS
+					bVrai = (sDefaut = "true")
+					jRes[sNom] = bVrai
+				SINON
+					jRes[sNom] = sDefaut
+				FIN
+			FIN
+		FIN
+		RENVOYER jRes
+	FIN
+FIN
